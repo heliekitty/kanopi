@@ -3,6 +3,26 @@
 Versions follow MAJOR.MINOR.PATCH. The current version lives in `version.js`.
 Each deployment gets a line here, newest first.
 
+## 1.1.5 - 2026-11-22
+
+- Import: if Preview or Next fails, the reason shows in the red message on the form instead of doing nothing.
+
+## 1.1.4 - 2026-11-22
+
+- Budget > Planner: amounts for this month count the actual due dates in the month. A weekly item is 4 or 5 times, every 2 weeks is 2 or 3, quarterly, twice-a-year and annual items only count in the months they fall due. Items without a due date use the yearly average.
+
+## 1.1.3 - 2026-11-22
+
+- Budget > Planner: monthly amounts for weekly items use 4 weeks a month (weekly 400 = 1,600 a month); every 2 weeks = 2 a month; daily = 30 a month.
+
+## 1.1.2 - 2026-11-22
+
+- Budget > Planner, Together view: income shows one total per family member (and Joint) instead of listing each item.
+
+## 1.1.1 - 2026-11-22
+
+- Budget > Planner: editing an income item keeps its income type (Paycheck, Investments or Other) instead of resetting it to Other.
+
 ## 1.1.0 - 2026-11-22
 
 Settings > About gets a version check and credits. Budget layouts and a Design section in Settings.

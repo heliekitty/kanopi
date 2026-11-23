@@ -1536,7 +1536,7 @@
 
   const FREQ = Store.FREQ;
   const freqLabel = (k) => (FREQ.find((f) => f[0] === k) || FREQ[4])[1];
-  const monthlyOf = (p) => Store.monthlyOf(p.amount, p.freq);
+  const monthlyOf = (p) => Store.monthlyOf(p.amount, p.freq, p.due);
 
   // Lighter tint of a hex color (used for the subscription part of a chart segment).
   function tint(hex, amount) {
@@ -1690,9 +1690,15 @@
     const monthlyCell = (p) => (countsInPlan(p) ? fmtc(monthlyOf(p)) : '—');
 
     const incomeTotal = sumMonthly(g.income);
-    const incomeRows = g.income.map((p) => [
-      esc(together ? `Income · ${ownerLabel(p.owner)}` : 'Income'), `${esc(p.name)} <span class="pay-meta">${esc(incomeTypeLabel(p))}</span>`, esc(freqLabel(p.freq)), dueText(p), fmtc(p.amount), fmtc(monthlyOf(p)), planActions(p)
-    ]);
+    // Together view: one aggregated row per family member (and Joint), like the expense rows below.
+    const incomeRows = together
+      ? [...new Set(g.income.map((p) => p.owner))].map((o) => {
+        const monthly = round2(sumMonthly(g.income.filter((p) => p.owner === o)));
+        return [esc(`${ownerLabel(o)} income`), '', 'Monthly', '—', fmtc(monthly), fmtc(monthly), ''];
+      })
+      : g.income.map((p) => [
+        'Income', `${esc(p.name)} <span class="pay-meta">${esc(incomeTypeLabel(p))}</span>`, esc(freqLabel(p.freq)), dueText(p), fmtc(p.amount), fmtc(monthlyOf(p)), planActions(p)
+      ]);
     if (incomeRows.length) incomeRows.push({ cells: ['Total income', '', '', '', '', fmtc(incomeTotal), ''], strong: true });
 
     // Regular expenses
@@ -1751,7 +1757,7 @@
     planEditing = item ? item.id : null;
     const kind = !item ? 'expense' : item.flow === 'income' ? 'income' : isSubscription(item) ? 'subscription' : 'expense';
     planDraft = item
-      ? { kind, owner: item.owner, cat: item.cat, name: item.name, freq: item.freq, amount: String(item.amount), due: item.due || '', active: item.sub === 'no' ? 'no' : 'yes' }
+      ? { kind, owner: item.owner, cat: item.cat, name: item.name, freq: item.freq, amount: String(item.amount), due: item.due || '', active: item.sub === 'no' ? 'no' : 'yes', incomeType: incomeTypeOf(item) }
       : { kind: 'expense', owner: who !== 'together' ? who : 'shared', cat: '', name: '', freq: 'monthly', amount: '', due: '', active: 'yes' };
   }
 
@@ -1776,7 +1782,7 @@
 
   function planMonthlyText() {
     const n = round2(toDollars(planDraft.amount));
-    return Number.isFinite(n) && n > 0 ? `${fmtc(Store.monthlyOf(n, planDraft.freq))} a month` : '—';
+    return Number.isFinite(n) && n > 0 ? `${fmtc(Store.monthlyOf(n, planDraft.freq, planDraft.due))} a month` : '—';
   }
 
   function planForm() {
@@ -2750,6 +2756,16 @@
     return true;
   }
 
+  // Runs an import step. If it throws, the message is shown in the red box on the form instead of failing silently.
+  function safeImp(step) {
+    try {
+      return step();
+    } catch (e) {
+      imp.error = `Preview could not finish: ${e && e.message ? e.message : String(e)}`;
+      return false;
+    }
+  }
+
   function impPreview() {
     const m = imp.map;
     imp.error = '';
@@ -3456,12 +3472,12 @@
     if (event.target.matches('[data-imp-setup]')) {
       event.preventDefault();
       if (imp) { const ta = event.target.querySelector('#imp-paste'); if (ta) imp.paste = ta.value; }
-      if (imp && impToMap()) route({ keepPlace: true, focus: '[data-imp-map]' }); else route({ keepPlace: true, focus: '.form-error' });
+      if (imp && safeImp(impToMap)) route({ keepPlace: true, focus: '[data-imp-map]' }); else route({ keepPlace: true, focus: '.form-error' });
       return;
     }
     if (event.target.matches('[data-imp-map-form]')) {
       event.preventDefault();
-      if (imp && impPreview()) route({ keepPlace: true, focus: '[data-imp-add]' }); else route({ keepPlace: true, focus: '.form-error' });
+      if (imp && safeImp(impPreview)) route({ keepPlace: true, focus: '[data-imp-add]' }); else route({ keepPlace: true, focus: '.form-error' });
       return;
     }
     if (event.target.matches('[data-groups-form]')) {

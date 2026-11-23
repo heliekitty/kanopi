@@ -98,17 +98,45 @@
 
   const TX_TYPES = ['expense', 'refund', 'income', 'transfer'];
 
-  // [key, label, times per year]
+  // [key, label, times per year]. Used when an item has no due date; otherwise the actual count in the month is used.
   const FREQ = [
     ['daily', 'Daily', 365], ['weekly', 'Weekly', 52], ['biweekly', 'Every 2 weeks', 26], ['semimonthly', 'Twice a month', 24],
     ['monthly', 'Monthly', 12], ['quarterly', 'Quarterly', 4], ['semiannual', 'Twice a year', 2], ['annual', 'Annually', 1]
   ];
   const FREQ_KEYS = FREQ.map((f) => f[0]);
 
-  // What one planner item costs (or brings in) per month.
-  function monthlyOf(amount, freq) {
+  // How many times an item falls due in a calendar month (month is 0-based). Null when the schedule can't be worked out.
+  function occurrencesIn(freq, due, year, month) {
+    const daysIn = new Date(year, month + 1, 0).getDate();
+    if (freq === 'daily') return daysIn;
+    if (freq === 'semimonthly') return 2;
+    if (freq === 'monthly') return 1;
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(due || '');
+    if (!m) return null;
+    const anchorDay = Date.UTC(+m[1], +m[2] - 1, +m[3]) / 86400000;
+    if (freq === 'weekly' || freq === 'biweekly') {
+      const step = freq === 'weekly' ? 7 : 14;
+      let n = 0;
+      for (let d = 1; d <= daysIn; d += 1) {
+        const day = Date.UTC(year, month, d) / 86400000;
+        if ((((day - anchorDay) % step) + step) % step === 0) n += 1;
+      }
+      return n;
+    }
+    const every = { quarterly: 3, semiannual: 6, annual: 12 }[freq];
+    if (!every) return null;
+    const diff = (year * 12 + month) - (+m[1] * 12 + (+m[2] - 1));
+    return ((diff % every) + every) % every === 0 ? 1 : 0;
+  }
+
+  // What one planner item costs (or brings in) in a month: the actual count of due dates in that month
+  // (weekly can be 4 or 5), or the yearly average when there is no due date. ref is the month to use; default is this month.
+  function monthlyOf(amount, freq, due, ref) {
     const f = FREQ.find((x) => x[0] === freq) || FREQ[4];
-    return Math.round((Number(amount) || 0) * f[2] / 12 * 100) / 100;
+    const when = ref || new Date();
+    const n = occurrencesIn(f[0], due, when.getFullYear(), when.getMonth());
+    const count = n === null ? f[2] / 12 : n;
+    return Math.round((Number(amount) || 0) * count * 100) / 100;
   }
 
   // Spending effect of a transaction: expenses add, refunds subtract, income and transfers are not spending.
@@ -143,7 +171,7 @@
       case 'ptx':
         return { ...base, date: dateStr(r.date), type: str(r.type, 40), ticker: str(r.ticker, 16), qty: num(r.qty), amount: num(r.amount), account: str(r.account, 64) };
       case 'expense':
-        return { ...base, date: dateStr(r.date), name: str(r.name), type: TX_TYPES.indexOf(r.type) !== -1 ? r.type : 'expense', cat: str(r.cat, 40), amount: num(r.amount), paidBy: str(r.paidBy, 64), owner: str(r.owner, 64) };
+        return { ...base, date: dateStr(r.date), name: str(r.name), type: TX_TYPES.indexOf(r.type) !== -1 ? r.type : 'expense', cat: str(r.cat, 40), amount: num(r.amount), paidBy: str(r.paidBy, 64), owner: str(r.owner, 64), src: str(r.src, 120) };
       case 'bill':
         return { ...base, name: str(r.name), amount: num(r.amount), day: Math.min(28, Math.max(1, Math.round(num(r.day)) || 1)), owner: str(r.owner, 64) };
       case 'budget':
@@ -153,7 +181,7 @@
       case 'rule':
         return { ...base, vendor: str(r.vendor, 40), cat: str(r.cat, 40) };
       case 'plan':
-        return { ...base, flow: r.flow === 'income' ? 'income' : 'expense', owner: str(r.owner, 64), cat: str(r.cat, 40), name: str(r.name, 60), freq: FREQ_KEYS.indexOf(r.freq) !== -1 ? r.freq : 'monthly', amount: num(r.amount), sub: r.flow === 'income' ? '' : (r.sub === 'yes' || r.sub === 'no' ? r.sub : ''), due: dateStr(r.due) };
+        return { ...base, flow: r.flow === 'income' ? 'income' : 'expense', owner: str(r.owner, 64), cat: str(r.cat, 40), name: str(r.name, 60), freq: FREQ_KEYS.indexOf(r.freq) !== -1 ? r.freq : 'monthly', amount: num(r.amount), sub: r.flow === 'income' ? '' : (r.sub === 'yes' || r.sub === 'no' ? r.sub : ''), due: dateStr(r.due), incomeType: r.flow === 'income' ? str(r.incomeType, 20) : '' };
       default:
         return null;
     }
@@ -331,16 +359,18 @@
         daysAgo: daysBetween(parseDay(e.date), today),
         name: e.name || 'Transaction',
         type,
-        cat: hasCat ? (categories[e.cat] ? e.cat : 'other') : '',
+        cat: hasCat ? (categories[e.cat] ? e.cat : (e.cat ? 'other' : '')) : '',
         amount: e.amount,
         paidBy: members.indexOf(e.paidBy) !== -1 ? e.paidBy : fallbackMember,
-        owner: ownerOk(e.owner) ? e.owner : 'shared'
+        owner: ownerOk(e.owner) ? e.owner : 'shared',
+        id: e.id,
+        src: e.src || ''
       };
     });
 
     // Planner items.
     const plan = of('plan').filter((p) => ownerOk(p.owner) && p.amount > 0 && (p.flow === 'income' || categories[p.cat]))
-      .map((p) => ({ id: p.id, flow: p.flow, owner: p.owner, cat: p.flow === 'income' ? '' : p.cat, name: p.name || 'Item', freq: p.freq, amount: p.amount, sub: p.sub || '', due: p.due || '' }));
+      .map((p) => ({ id: p.id, flow: p.flow, owner: p.owner, cat: p.flow === 'income' ? '' : p.cat, name: p.name || 'Item', freq: p.freq, amount: p.amount, sub: p.sub || '', due: p.due || '', incomeType: p.flow === 'income' ? (p.incomeType || '') : '' }));
 
     const bills = of('bill').map((b) => ({ name: b.name || 'Bill', amount: b.amount, day: b.day, owner: ownerOk(b.owner) ? b.owner : 'shared' }));
 
@@ -358,7 +388,7 @@
     // A cancelled subscription stays in the planner but no longer counts toward goals.
     plan.filter((p) => p.flow === 'expense' && p.sub !== 'no').forEach((p) => {
       const row = budget[p.owner][p.cat] || (budget[p.owner][p.cat] = [0, 0]);
-      row[1] = Math.round((row[1] + monthlyOf(p.amount, p.freq)) * 100) / 100;
+      row[1] = Math.round((row[1] + monthlyOf(p.amount, p.freq, p.due)) * 100) / 100;
     });
     of('budget').forEach((b) => {
       if (!ownerOk(b.owner) || !categories[b.cat]) return;
