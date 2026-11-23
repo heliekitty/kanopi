@@ -297,7 +297,7 @@
   }
 
   // Category budget meter: ten leaves, one per 10% of budget. Each leaf has its own color, from green through yellow, orange and red.
-  // Going over budget keeps the colored leaves and adds a brown leaf for every full 10% over, on a row below.
+  // Going over budget keeps the colored leaves and adds a brown leaf for every full 10% over, after the tenth leaf.
   const BUDGET_LEAF_COLORS = ['#2E9E76', '#4C9A4A', '#7A9A2E', '#9A9020', '#AD8100', '#D2741A', '#D0581E', '#C9432A', '#B83228', '#9E2424'];
   function budgetLeaves(label, pct) {
     const filled = Math.min(10, Math.round(clampPct(pct) / 10));
@@ -307,7 +307,7 @@
       : `<svg class="leaf off" viewBox="0 0 24 24" aria-hidden="true"><path d="${LEAF_PATH}"></path></svg>`)).join('');
     const brown = Array.from({ length: brownCount }, () => `<svg class="leaf brown" viewBox="0 0 24 24" aria-hidden="true"><path d="${LEAF_PATH}"></path></svg>`).join('');
     return `<div class="leaves${brownCount ? ' over' : ''}" role="progressbar" aria-label="${esc(label)}"
-              aria-valuemin="0" aria-valuemax="100" aria-valuenow="${clampPct(pct)}"${pct > 100 ? ` aria-valuetext="Over budget by ${Math.round(pct - 100)}%"` : ''}>${colored}</div>${brownCount ? `<div class="leaves-brown">${brown}</div>` : ''}`;
+              aria-valuemin="0" aria-valuemax="100" aria-valuenow="${clampPct(pct)}"${pct > 100 ? ` aria-valuetext="Over budget by ${Math.round(pct - 100)}%"` : ''}>${colored}${brown}</div>`;
   }
 
   // Decorative tree on the net worth card.
@@ -634,11 +634,35 @@
       </a>`;
   }
 
+  // Goal tree: the bare tree (Taxes icon, in the theme brown) at 0%, with the logo tree faded in over it as the goal fills up to 100%.
+  const GOAL_BARE_TREE = `<svg class="goal-tree-svg" viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false"><path fill="currentColor" d="M9.5 1a.5.5 0 0 0-.5.5v2.885l-.754-.672a.5.5 0 0 0-.705.04a.5.5 0 0 0 .041.706L9 5.723v1.592c-.485.486-.99 1.003-1.371 1.607L6 7.293V4.5a.5.5 0 0 0-1 0v1.795l-.125-.125l-.047-.047l-1.975-1.977a.5.5 0 1 0-.707.708l1.51 1.51l-1.379.689a.5.5 0 0 0 .446.894l1.677-.84l.743.743l.004.004l.004.004C6.607 9.315 7 10.085 7 12v2.5a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-3c0-1.472.125-2.268.393-2.855c.267-.588.71-1.041 1.46-1.791l.747-.747l1.677.84a.5.5 0 0 0 .446-.894l-1.38-.69l1.51-1.51a.5.5 0 0 0-.707-.707l-1.974 1.977l-.047.047l-.979.976l-.146.147V3.707l1.854-1.853a.5.5 0 0 0-.707-.707L10 2.293V1.5a.5.5 0 0 0-.5-.5"/></svg>`;
+  const GOAL_FULL_TREE = `<svg class="goal-tree-svg" viewBox="0 0 128 128" aria-hidden="true"><path fill="#1F7A5A" d="M32 24.66s2.43-7.3 8.16-11.88s58.85 15.04 58.85 15.04s9.28 3.31 14.77 12.08c3.69 5.9 5.75 14.62 1.84 25.15c-9.32 25.08-33.5 22.18-39.8 20.75c-2.96-.67-10.17-2.58-10.17-2.58s-16.47 13.6-36.29 3.17c-15.09-7.94-13.22-19.81-13.22-19.81S5.98 56.42 10.38 42.27C15.68 25.23 32 24.66 32 24.66"/><path fill="#2E9E76" d="M66.37 55.01c13.75-2.29 18.04-8.16 21.77-13.6c4.11-6 3.01-11.03 5.87-11.17s5.14 5.02 2 14.03c-4.44 12.74-13.57 14.61-13.75 18.04c-.14 2.72 9.72 2.91 18.62-1.43c12.89-6.3 12.89-21.05 12.89-21.05s-2.29-4.73-6.73-8.02s-7.74-5.01-7.74-5.01S94 6.9 69.95 3.6S36.01 17.07 36.01 17.07s.86 5.44 5.01 11.74c3.31 5.03 6.73 4.87 6.44 7.73c-.19 1.86-6.16 2.43-12.46-.29c-5.74-2.48-7.16-5.87-8.73-5.87S11.68 37.63 17.11 53c4.3 12.17 18.51 14.45 21.05 14.89c7.45 1.29 11.74-3.58 6.44-7.45s-11.17-6.16-9.88-10.02c1.39-4.18 6.35.18 12.31 2.76c5.89 2.55 13.02 2.89 19.34 1.83"/><path fill="#5E4429" d="M39.03 70.97s3.3-.19 4.66-.58s3.2-1.55 3.2-1.55S59.64 82.18 60.96 83.3c1.29 1.09 2.81-15.53 2.81-15.53s2.91.45 5.63.02c3.58-.57 6.02-1.71 6.02-1.71S73.68 76.31 73 80.19c-.43 2.49-.58 9.41-.58 9.41l-9.32 7.76l-7.09-4.76s-.02-1.87-1.07-3.14c-3.26-3.94-15.91-18.49-15.91-18.49m32.51 22.81l7.09-8.54s2.52.19 4.37.19c1.84 0 5.05-.39 5.05-.39s-5.82 7.86-8.93 11.74s-7.18 8.74-7.18 8.74l-3.88-11.26z"/><path fill="#7A5A3C" d="M66.5 86.98c-2.9.26-10.48 5.63-10.48 5.63s.39 9.12.1 14.27s-2.32 13.56-.45 15.69c1.62 1.84 15.24 2.19 17.27.05c2.04-2.14.06-10.98.06-16.71s-.58-16.31-.58-16.31s-2.62-2.91-5.92-2.62"/></svg>`;
+  function goalTree(pct) {
+    const p = clampPct(pct);
+    return `<div class="goal-tree" role="img" aria-label="Goal ${p}% reached">
+      <div class="goal-tree-bare">${GOAL_BARE_TREE}</div>
+      <div class="goal-tree-full" style="opacity:${(p / 100).toFixed(2)}">${GOAL_FULL_TREE}</div>
+    </div>`;
+  }
+
+  // Net worth stays hidden behind a pile of leaves until tapped. It hides again when you leave the page.
+  let nwRevealed = false;
+
+  // A small pile of leaves, shown in place of the net worth amount.
+  const NW_PILE = `<svg class="nw-pile-art" viewBox="0 0 80 44" aria-hidden="true" focusable="false">
+    <g transform="translate(6 20) rotate(-25) scale(1.25)"><path d="${LEAF_PATH}" fill="#2E9E76" stroke="#1F7A5A" stroke-width="0.8"/></g>
+    <g transform="translate(22 8) rotate(15) scale(1.3)"><path d="${LEAF_PATH}" fill="#4C9A4A" stroke="#1F7A5A" stroke-width="0.8"/></g>
+    <g transform="translate(36 22) rotate(40) scale(1.25)"><path d="${LEAF_PATH}" fill="#7A9A2E" stroke="#1F7A5A" stroke-width="0.8"/></g>
+    <g transform="translate(50 6) rotate(-10) scale(1.3)"><path d="${LEAF_PATH}" fill="#2E9E76" stroke="#1F7A5A" stroke-width="0.8"/></g>
+    <g transform="translate(58 24) rotate(-40) scale(1.25)"><path d="${LEAF_PATH}" fill="#4C9A4A" stroke="#1F7A5A" stroke-width="0.8"/></g>
+  </svg>`;
+
   function renderHome() {
     const b = balances();
     const bt = budgetTotals();
-    const netWorth = b.assets - b.liabilities;
-    const afterExpenses = netWorth - bt.spent;
+    // Net worth: account balances plus holdings, less this month's spending.
+    const portfolioValue = sumOf(holdingsInView().map((h) => h.value));
+    const netWorth = b.assets - b.liabilities + portfolioValue - bt.spent;
     const tripPct = pctOf(D.trip.saved, D.trip.target);
     const budgetPct = pctOf(bt.spent, bt.budget);
 
@@ -654,28 +678,28 @@
     return `
       ${pageTop()}
       <div class="stack">
-        <section class="card wide nw-card" aria-labelledby="nw-title">
-          <div class="nw-text">
-            <h2 id="nw-title" class="card-label">Net worth</h2>
-            <p class="big">${money.format(netWorth)}</p>
-            <p class="muted">After this month's expenses: ${money.format(afterExpenses)}</p>
-          </div>
-          ${treeSvg()}
-        </section>
-
         <button type="button" class="card trip-card" data-open-trip>
           <span id="trip-title" class="card-label">Goal towards ${esc(D.trip.name)}</span>
           <p class="row"><span>Progress</span><span>${clampPct(tripPct)}%</span></p>
-          ${leafMeter('Goal progress', tripPct)}
+          ${goalTree(tripPct)}
           <span class="muted trip-line">${money.format(D.trip.saved)} saved of ${money.format(D.trip.target)}${D.trip.targetDate ? ' · ' + esc(D.trip.targetDate) : ''}</span>
         </button>
 
-        <section class="card" aria-labelledby="budget-title">
+        <section class="card wide nw-card" aria-labelledby="nw-title">
+          <div class="nw-text">
+            <h2 id="nw-title" class="card-label">Net worth</h2>
+            <button type="button" class="nw-toggle" data-nw-toggle aria-expanded="${nwRevealed}" aria-label="${nwRevealed ? 'Hide net worth' : 'Show net worth'}">${nwRevealed ? `<span class="big nw-amount">${money.format(netWorth)}</span>` : NW_PILE}</button>
+          </div>
+        </section>
+
+
+
+        <a class="card card-link" href="#budget" aria-labelledby="budget-title">
           <h2 id="budget-title" class="card-label">Budget this month</h2>
           <p class="row"><span>${esc(monthLabel())}</span><span>${money.format(bt.spent)} of ${money.format(bt.budget)}</span></p>
-          ${leafMeter('Budget spent', budgetPct, bt.budget > 0 && bt.spent > bt.budget)}
+          ${budgetLeaves('Budget spent', budgetPct)}
           ${bt.budget > 0 && bt.spent > bt.budget ? `<p class="over-note">Over budget by ${money.format(bt.spent - bt.budget)}</p>` : ''}
-        </section>
+        </a>
 
         ${paymentsCard()}
 
@@ -2531,6 +2555,13 @@
         ${hasCategory(d.type) ? `<div class="field"><label for="tx-cat">Category</label>
           <select id="tx-cat" data-tx="cat">${cats}</select>
           <p class="muted tx-hint" id="tx-hint" aria-live="polite">${esc(d.hint)}</p></div>` : ''}
+        ${hasCategory(d.type) ? (() => {
+          const kw = d.keywordTouched ? d.keyword || '' : Store.vendorKey(d.name);
+          const show = d.name.trim() && !knownStore(d.name);
+          return `<div class="field" id="tx-keyword-field"${show ? '' : ' style="display:none"'}><label for="tx-keyword">Keyword for this store</label>
+          <input id="tx-keyword" type="text" maxlength="40" autocomplete="off" data-tx="keyword" value="${esc(kw)}">
+          <p class="muted" id="tx-keyword-count" aria-live="polite">${esc(keywordCountText(Store.vendorKey(kw)))}</p></div>`;
+        })() : ''}
         <div class="field"><label for="tx-owner">Counts in</label><select id="tx-owner" data-tx="owner">${owners}</select></div>
         ${toolError ? `<p class="form-error" role="alert">${esc(toolError)}</p>` : ''}
         ${sampleNote()}
@@ -2585,13 +2616,14 @@
     if (err) { toolError = err; return false; }
 
     const cat = withCat ? d.cat : '';
-    // A store Kanopi has not seen before: confirm its keyword first (see the keyword dialog).
-    if (withCat && cat && !d.keywordChosen && !knownStore(name)) {
-      keywordDraft = { keyword: Store.vendorKey(name), cat, error: '' };
-      return false;
+    // A store Kanopi has not seen before: the keyword comes from the form, and past blanks get this category.
+    const newStore = withCat && cat && !knownStore(name);
+    let key = withCat ? Store.vendorKey(name) : '';
+    if (newStore) {
+      if (d.keywordTouched) key = Store.vendorKey(d.keyword || '');
+      if (key.length < KEYWORD_MIN) { toolError = `Use at least ${KEYWORD_MIN} letters for the keyword.`; return false; }
     }
-    const key = withCat ? (d.keywordChosen || Store.vendorKey(name)) : '';
-    const fills = d.keywordChosen && cat ? fillPastBlanks(key, cat, d.editKey) : [];
+    const fills = newStore ? fillPastBlanks(key, cat, d.editKey) : [];
     // Refunds are saved as expenses with a negative amount.
     const sType = d.type === 'refund' ? 'expense' : d.type;
     const sAmount = d.type === 'refund' ? -amount : amount;
@@ -2621,7 +2653,6 @@
 
   // ---- New store keyword: confirm before saving, then fill in past transactions with no category
 
-  let keywordDraft = null; // { keyword, cat, error } while the confirm dialog is open
   const KEYWORD_MIN = 3;
 
   const knownStore = (name) => !!(D.rules && Store.ruleMatch(name, D.rules));
@@ -2649,40 +2680,6 @@
     const blank = hits.filter((x) => !x.cat).length;
     const filled = hits.length - blank;
     return `Fills in ${blank} past transaction${blank === 1 ? '' : 's'} with no category.${filled ? ` ${filled} already ${filled === 1 ? 'has' : 'have'} a category and stay${filled === 1 ? 's' : ''} as they are.` : ''}`;
-  }
-
-  function syncKeywordDialog(opts) {
-    document.querySelectorAll('#keyword-dialog').forEach((el) => el.remove());
-    if (!keywordDraft || !txDraft) return;
-    const kd = keywordDraft;
-    const dlg = document.createElement('dialog');
-    dlg.id = 'keyword-dialog';
-    dlg.className = 'modal';
-    dlg.setAttribute('aria-labelledby', 'keyword-title');
-    dlg.innerHTML = `<div class="modal-head"><h2 id="keyword-title" class="card-label">Confirm the keyword</h2></div>
-      <div class="modal-body"><form class="member-form" data-keyword-form novalidate>
-        <p>Kanopi will use this keyword to fill in <strong>${esc(D.categories[kd.cat] || kd.cat)}</strong> for matching transactions.</p>
-        <div class="field"><label for="keyword-input">Keyword</label>
-          <input id="keyword-input" type="text" maxlength="40" autocomplete="off" data-keyword-input value="${esc(kd.keyword)}"></div>
-        <p class="muted" id="keyword-count" aria-live="polite">${esc(keywordCountText(kd.keyword))}</p>
-        ${kd.error ? `<p class="form-error" role="alert">${esc(kd.error)}</p>` : ''}
-        <div class="btn-row">
-          <button type="submit" class="btn btn-primary">Save keyword</button>
-          <button type="button" class="btn" data-keyword-cancel>Cancel</button>
-        </div>
-      </form></div>`;
-    dlg.querySelector('[data-keyword-input]').addEventListener('input', (e) => {
-      const count = dlg.querySelector('#keyword-count');
-      if (count) count.textContent = keywordCountText(Store.vendorKey(e.target.value));
-    });
-    dlg.addEventListener('close', () => {
-      if (keywordDraft) { keywordDraft = null; route({ keepPlace: true, focus: '[data-tx-form] [type=submit]' }); }
-    });
-    view.appendChild(dlg);
-    dlg.showModal();
-    const want = opts && opts.focus ? dlg.querySelector(opts.focus) : null;
-    const first = want || dlg.querySelector('#keyword-input');
-    if (first) first.focus({ preventScroll: true });
   }
 
   // ---- Learned stores (Settings)
@@ -4011,7 +4008,7 @@
     if (!booted) return; // wait for stored data to load (init below)
     const keepPlace = !!(opts && opts.keepPlace);
     if (!keepPlace && lotDialog && lotDialog.open) lotDialog.close();
-    if (!keepPlace) { txModal = null; familyPanel = false; ruleEditing = null; ruleError = ''; closeTrip(); keywordDraft = null; }
+    if (!keepPlace) { txModal = null; familyPanel = false; ruleEditing = null; ruleError = ''; closeTrip(); nwRevealed = false; }
     let requested = location.hash.replace('#', '') || 'home';
     if (requested === 'budget-expenses') requested = 'budget-transactions';
     if (requested === 'portfolio-transactions') { requested = 'portfolio-activity'; history.replaceState(null, '', '#portfolio-activity'); }
@@ -4025,7 +4022,6 @@
     view.innerHTML = page.render();
     syncPlanDialog(opts);
     syncTripDialog(opts);
-    syncKeywordDialog(opts);
     syncTxDialog(opts);
     syncFamilyDialog(opts);
     renderWhoMenu();
@@ -4125,8 +4121,8 @@
     if (t.closest('[data-tx-delete-no]')) { closeTxModal(); return; }
     const txYes = t.closest('[data-tx-delete-yes]');
     if (txYes) { txModal = null; deleteTx(txYes.dataset.txDeleteYes); route({ keepPlace: true, focus: '[data-open-tx]' }); return; }
+    if (t.closest('[data-nw-toggle]')) { nwRevealed = !nwRevealed; route({ keepPlace: true, focus: '[data-nw-toggle]' }); return; }
     if (t.closest('[data-open-trip]')) { openTrip(); route({ keepPlace: true, focus: '#trip-name' }); return; }
-    if (t.closest('[data-keyword-cancel]')) { keywordDraft = null; route({ keepPlace: true, focus: '[data-tx-form] [type=submit]' }); return; }
     if (t.closest('[data-trip-cancel]')) { closeTrip(); route({ keepPlace: true, focus: '[data-open-trip]' }); return; }
     if (t.closest('[data-open-plan]')) { openPlan(null); route({ keepPlace: true, focus: '#plan-name' }); return; }
     const planEdit = t.closest('[data-plan-edit]');
@@ -4245,7 +4241,27 @@
     else if (el.matches('[data-goal]') && goalsDraft) { const [o, c] = el.dataset.goal.split('|'); goalsDraft[o][c] = el.value; }
     else if (el.matches('[data-cat-name]') && catDraft) catDraft.names[el.dataset.catName] = el.value;
     else if (el.id === 'cat-new' && catDraft) catDraft.newName = el.value;
-    else if (el.matches('[data-tx]') && txDraft && el.type !== 'checkbox') txDraft[el.dataset.tx] = el.value;
+    else if (el.matches('[data-tx]') && txDraft && el.type !== 'checkbox') {
+      txDraft[el.dataset.tx] = el.value;
+      if (el.dataset.tx === 'keyword') {
+        txDraft.keywordTouched = true;
+        const count = document.getElementById('tx-keyword-count');
+        if (count) count.textContent = keywordCountText(Store.vendorKey(el.value));
+      }
+      if (el.dataset.tx === 'name') {
+        const field = document.getElementById('tx-keyword-field');
+        if (field) {
+          const show = txDraft.name.trim() && !knownStore(txDraft.name);
+          field.style.display = show ? '' : 'none';
+          const kw = document.getElementById('tx-keyword');
+          if (kw && !txDraft.keywordTouched) {
+            kw.value = Store.vendorKey(txDraft.name);
+            const count = document.getElementById('tx-keyword-count');
+            if (count) count.textContent = keywordCountText(kw.value);
+          }
+        }
+      }
+    }
     else if (el.matches('[data-txf]')) txFilterChanged(el.dataset.txf, el.value);
     else if (el.matches('[data-imp]') && imp) { imp[el.dataset.imp] = el.value; if (el.dataset.imp === 'bank') updateFloorText(); }
     else if (el.matches('[data-group-input]')) { if (!groupsDraft) groupsDraft = {}; groupsDraft[el.dataset.groupInput] = el.value; }
@@ -4369,20 +4385,9 @@
       return;
     }
     if (event.target.matches('[data-rule-form]')) { event.preventDefault(); saveRuleEdit(event.target.dataset.ruleForm, event.target.querySelector('[data-rule-input]').value); return; }
-    if (event.target.matches('[data-keyword-form]')) {
-      event.preventDefault();
-      const key = Store.vendorKey(event.target.querySelector('[data-keyword-input]').value);
-      if (key.length < KEYWORD_MIN) { keywordDraft.error = `Use at least ${KEYWORD_MIN} letters.`; route({ keepPlace: true, focus: '#keyword-input' }); return; }
-      txDraft.keywordChosen = key;
-      keywordDraft = null;
-      toolError = '';
-      if (saveTx()) { txDraft = null; txModal = null; route({ keepPlace: true, focus: '[data-open-tx]' }); }
-      else route({ keepPlace: true, focus: '.form-error' });
-      return;
-    }
     if (event.target.matches('[data-tx-form]')) {
       event.preventDefault(); toolError = '';
-      if (txDraft && saveTx()) { txDraft = null; txModal = null; route({ keepPlace: true, focus: '[data-open-tx]' }); } else if (keywordDraft) route({ keepPlace: true, focus: '#keyword-input' }); else route({ keepPlace: true, focus: '.form-error' });
+      if (txDraft && saveTx()) { txDraft = null; txModal = null; route({ keepPlace: true, focus: '[data-open-tx]' }); } else route({ keepPlace: true, focus: '.form-error' });
       return;
     }
     if (!event.target.matches('[data-member-form]')) return;

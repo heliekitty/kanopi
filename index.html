@@ -517,10 +517,26 @@ main {
 .leaf.brown { fill: var(--bark); stroke: none; }
 .leaves-brown { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .leaves-brown .leaf { flex: 0 0 calc((100% - 36px) / 10); max-width: 30px; }
+/* Phones: the ten leaves fill the full width of the meter. */
+@media (max-width: 767px) {
+  .leaves .leaf { max-width: none; }
+  .leaves-brown .leaf { max-width: none; }
+}
 
 /* Home goal card: the whole card opens the goal dialog. */
 .trip-card { display: block; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; }
 .trip-card .card-label { display: block; }
+.card-link { display: block; color: inherit; text-decoration: none; cursor: pointer; }
+.card-link .card-label { display: block; }
+.card-link:focus-visible { outline: 3px solid var(--mint-strong); outline-offset: 2px; }
+.nw-toggle { display: flex; align-items: center; width: 100%; height: 72px; padding: 0; border: 0; background: none; text-align: left; color: var(--ink); cursor: pointer; font: inherit; overflow: hidden; }
+.nw-toggle:focus-visible { outline: 3px solid var(--mint-strong); outline-offset: 2px; border-radius: 8px; }
+.nw-pile-art { display: block; width: 120px; height: 66px; flex: none; }
+.nw-amount { display: block; margin: 0; line-height: 66px; white-space: nowrap; }
+.goal-tree { position: relative; width: 96px; height: 96px; margin: 4px 0 8px; }
+.goal-tree .goal-tree-svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+.goal-tree-bare { position: absolute; inset: 0; color: var(--bark); }
+.goal-tree-full { position: absolute; inset: 0; transition: opacity .4s ease; }
 .trip-card:focus-visible { outline: 3px solid var(--mint-strong); outline-offset: 2px; }
 .trip-line { display: block; }
 
@@ -1282,8 +1298,8 @@ body::before { content: ""; position: fixed; top: 0; left: 0; right: 0; height: 
 .lot-scroll.scroll:focus-visible { outline: 3px solid var(--mint-strong); outline-offset: 2px; }
 /* Budget transactions: details flush left, amount large and flush right */
 .tx-list { list-style: none; margin: 8px 0 0; padding: 0; }
-.tx-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 16px; padding: 12px 0; border-bottom: 1px solid var(--border); }
-.tx-side { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.tx-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; gap: 4px 16px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.tx-side { display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; gap: 2px; }
 .tx-who { display: inline-flex; }
 .tx-who .avatar { width: 32px; height: 32px; }
 .avatar-pair { display: inline-flex; align-items: center; }

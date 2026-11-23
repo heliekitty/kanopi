@@ -3,6 +3,19 @@
 Versions follow MAJOR.MINOR.PATCH. The current version lives in `version.js`.
 Each deployment gets a line here, newest first.
 
+## 1.6.0 - 2026-11-23
+
+- Home > Net worth: includes the value of your portfolio holdings, and subtracts this month's spending. The "After this month's expenses" line is removed. The tree is removed.
+- Home > Net worth: the amount is hidden behind a pile of leaves. Tap the pile to show it, and tap the amount to hide it. It also hides again when you leave Home.
+- Home > Goal card: moved to the top. It shows the bare tree at 0% and fades in the full logo tree as progress goes up. Tapping it edits the goal.
+- Home > Budget this month: tapping it opens the Budget page. Its leaves use the same color gradient as the Budget page, and brown leaves show when you're over.
+- Budget > This month by category: on phones the ten leaves fill the full width. Brown leaves for going over budget sit on the same row, after the tenth leaf.
+
+## 1.5.1 - 2026-11-23
+
+- Transactions on phones: the edit and delete buttons sit at the bottom right of each card, lined up with the avatar.
+- New store keyword: a keyword field appears in the transaction form when the store is new. It defaults to the cleaned store name, is editable, and shows how many past transactions it will fill in. Saving fills in the category on past matches that have none. This replaces the separate confirm dialog, which could sit under the edit popup.
+
 ## 1.5.0 - 2026-11-23
 
 - Budget > This month by category: the total leaves are one color each, from green through yellow, orange, and red, one leaf per 10% of budget. Going over budget keeps the colored leaves and adds a brown leaf for each full 10% over. The poop leaves are gone from this card.
