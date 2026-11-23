@@ -334,8 +334,13 @@
 
 
   // Pie chart with a legend. items: [{ label, value, color }]. Values of zero are left out.
-  const PIE_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6', '#e34948'];
-  const PIE_OTHER = '#7D8B84';
+  // Expenses never use green: green is reserved for income and savings elsewhere.
+  const PIE_COLORS = ['#2a78d6', '#eb6834', '#8C5E34', '#eda100', '#e87ba4', '#5E6B8C', '#6250d6', '#e34948'];
+  const PIE_OTHER = '#8A8F93';
+  // Income types, shaded in greys for the income bar. Paycheck is the darkest.
+  const INCOME_TYPES = [['paycheck', 'Paycheck', '#1F7A5A'], ['investments', 'Investments', '#2E9E76'], ['other-income', 'Other', '#A8E6CF']];
+  const incomeTypeOf = (p) => (INCOME_TYPES.some((t) => t[0] === p.incomeType) ? p.incomeType : 'other-income');
+  const incomeTypeLabel = (p) => INCOME_TYPES.find((t) => t[0] === incomeTypeOf(p))[1];
 
   function pie(items, ariaLabel) {
     const list = items.filter((i) => i.value > 0);
@@ -367,23 +372,64 @@
   }
 
   // Plain table. head: [{ t, num }]. rows: arrays of ready-to-insert HTML, or { cells, strong }.
-  function table(caption, head, rows) {
+  // Mobile card list built from the same rows. A head entry's `card` role decides where its cell goes:
+  // title (bold line), meta (small line joined by dots), block (own line, e.g. avatar),
+  // amount (large, right), secondary (small, right, under the amount), actions (icon buttons beside the title).
+  function cardList(caption, head, rows) {
+    const role = (i) => (head[i] && head[i].card) || 'meta';
+    const roleOf = (c, i) => (String(c).indexOf('row-actions') !== -1 ? 'act' : role(i));
+    const filled = (cells, name) => cells.map((c, i) => [c, i]).filter(([c, i]) => roleOf(c, i) === name && String(c).trim() !== '');
+    const items = rows.map((r) => {
+      const cells = Array.isArray(r) ? r : r.cells;
+      const strong = !Array.isArray(r) && r.strong;
+      const acts = cells.filter((c) => String(c).indexOf('row-actions') !== -1);
+      const titles = filled(cells, 'title');
+      const metas = filled(cells, 'meta');
+      const blocks = filled(cells, 'block');
+      const amounts = filled(cells, 'amount');
+      const secs = filled(cells, 'secondary');
+      const titleHtml = titles.length ? titles.map(([c]) => c).join(' ') : (metas.length ? metas.shift()[0] : '');
+      const amountRaw = amounts.length ? amounts[0][0] : (secs.length ? secs[0][0] : '');
+      const amountHtml = String(amountRaw).indexOf('tx-amt') !== -1 ? amountRaw : `<span class="tx-amt">${amountRaw}</span>`;
+      const secHtml = amounts.length && secs.length ? `<span class="tx-sec">${esc(head[secs[0][1]].t)}: ${secs[0][0]}</span>` : '';
+      return `
+        <li class="tx-row${strong ? ' strong' : ''}">
+          <div class="tx-main">
+            <span class="tx-title"><span class="tx-name">${titleHtml}</span>${acts.join('')}</span>
+            ${metas.length ? `<span class="tx-meta">${metas.map(([c]) => c).join(' · ')}</span>` : ''}
+            ${blocks.map(([c]) => `<span class="tx-block">${c}</span>`).join('')}
+          </div>
+          ${amountRaw !== '' || secHtml ? `<div class="tx-side">${amountHtml}${secHtml}</div>` : ''}
+        </li>`;
+    }).join('');
+    return `<ul class="tx-list tbl-cards" aria-label="${esc(caption)}">${items}</ul>`;
+  }
+
+  function table(caption, head, rows, cards) {
     const th = head.map((h) => `<th scope="col"${h.num ? ' class="num"' : ''}${h.aria ? ` aria-sort="${h.aria}"` : ''}>${h.html || esc(h.t)}</th>`).join('');
     const body = rows.map((r) => {
       const cells = Array.isArray(r) ? r : r.cells;
       const strong = !Array.isArray(r) && r.strong;
       const cls = [strong ? 'strong' : '', !Array.isArray(r) && r.cls ? r.cls : ''].filter(Boolean).join(' ');
-      return `<tr${cls ? ` class="${cls}"` : ''}>${cells.map((c, i) =>
-        `<td${head[i] && head[i].num ? ' class="num"' : ''} data-label="${head[i] ? esc(head[i].t) : ''}">${c}</td>`).join('')}</tr>`;
+      // A cell holding row actions (icon buttons) is tagged, so mobile can put it on the row's title line.
+      const act = cells.some((c) => String(c).indexOf('row-actions') !== -1);
+      const rowCls = [cls, act ? 'has-act' : ''].filter(Boolean).join(' ');
+      return `<tr${rowCls ? ` class="${rowCls}"` : ''}>${cells.map((c, i) => {
+        const isAct = String(c).indexOf('row-actions') !== -1;
+        const tdCls = [head[i] && head[i].num ? 'num' : '', isAct ? 'act-cell' : ''].filter(Boolean).join(' ');
+        return `<td${tdCls ? ` class="${tdCls}"` : ''} data-label="${head[i] ? esc(head[i].t) : ''}">${c}</td>`;
+      }).join('')}</tr>`;
     }).join('');
-    return `
-      <div class="tbl-wrap">
+    const tableHtml = `
+      <div class="tbl-wrap${cards ? ' tbl-desktop' : ''}">
         <table class="tbl">
           <caption class="sr-only">${esc(caption)}</caption>
           <thead><tr>${th}</tr></thead>
           <tbody>${body}</tbody>
         </table>
       </div>`;
+    // With cards set, phones get the card list instead of the stacked table.
+    return cards ? tableHtml + cardList(caption, head, rows) : tableHtml;
   }
 
   function card(id, title, body, cls) {
@@ -1374,6 +1420,9 @@
 
   const TYPE_OPTIONS = [['expense', 'Expense'], ['refund', 'Refund or reimbursement'], ['income', 'Income'], ['transfer', 'Transfer or card payment']];
   const TYPE_LABEL = { expense: 'Expense', refund: 'Refund', income: 'Income', transfer: 'Transfer' };
+  const NONE_CAT = '__none__'; // filter value for transactions with no category
+  const ICON_PENCIL = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>';
+  const ICON_TRASH = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13h10l1-13"/><path d="M9 7V4h6v3"/></svg>';
   const RANGES = [['month', 'This month'], ['30', 'Past 30 days'], ['60', 'Past 60 days'], ['90', 'Past 90 days'], ['all', 'All time']];
   const TX_CAP = 200;
 
@@ -1393,14 +1442,15 @@
     const first = new Date(today.getFullYear(), today.getMonth(), 1);
     const q = txFilter.q.trim().toLowerCase();
     return D.expenses
+      .map((e, i) => ({ ...e, key: e.id || `s${i}` }))
       .filter((e) => inView(e.owner))
       .map((e) => ({ ...e, date: dateFromDaysAgo(e.daysAgo) }))
       .filter((e) => {
         if (txFilter.range === 'month') { if (e.date < first) return false; }
         else if (txFilter.range !== 'all' && e.daysAgo >= Number(txFilter.range)) return false;
         if (txFilter.type && typeOf(e) !== txFilter.type) return false;
-        if (txFilter.cat && e.cat !== txFilter.cat) return false;
-        if (txFilter.paidBy && e.paidBy !== txFilter.paidBy) return false;
+        if (txFilter.cat === NONE_CAT) { if (!hasCategory(typeOf(e)) || e.cat) return false; }
+        else if (txFilter.cat && e.cat !== txFilter.cat) return false;
         if (txFilter.owner && e.owner !== txFilter.owner) return false;
         if (q && e.name.toLowerCase().indexOf(q) === -1) return false;
         return true;
@@ -1408,25 +1458,38 @@
       .sort((a, b) => b.date - a.date);
   }
 
+  const TX_HEAD = [
+    { t: 'Date', card: 'meta' }, { t: 'Description', card: 'title' }, { t: 'Category', card: 'meta' },
+    { t: 'Counts in', card: 'block' }, { t: 'Amount', num: true, card: 'amount' }, { t: 'Actions' }
+  ];
+
+  function txCells(e) {
+    const typed = typeOf(e);
+    const catText = hasCategory(typed) ? (e.cat && D.categories[e.cat] ? D.categories[e.cat] : 'No category') : TYPE_LABEL[typed];
+    const tone = typed === 'expense' ? 'out' : (typed === 'refund' || typed === 'income') ? 'in' : '';
+    const who = e.owner === 'shared'
+      ? `<span class="avatar-pair" role="img" aria-label="Joint">${avatarHtml(memberList[0] ? memberList[0].id : 'together')}${memberList[1] ? avatarHtml(memberList[1].id) : ''}</span>`
+      : `<span role="img" aria-label="${esc(ownerLabel(e.owner))}">${avatarHtml(e.owner)}</span>`;
+    return [
+      esc(formatDate(e.date)),
+      esc(e.name),
+      esc(catText),
+      `<span class="tx-who">${who}</span>`,
+      `<span class="tx-amt${tone ? ' ' + tone : ''}">${esc(txAmount(e))}</span>`,
+      txActions(e)
+    ];
+  }
+
   function txResultsHtml() {
     const list = filteredTransactions();
     const spending = sumOf(list.map((e) => Store.spendOf(e)));
     const income = sumOf(list.filter((e) => typeOf(e) === 'income').map((e) => e.amount));
     const shown = list.slice(0, TX_CAP);
-    const rows = shown.map((e) => [
-      esc(formatDate(e.date)),
-      esc(e.name),
-      `<span class="pill">${esc(TYPE_LABEL[typeOf(e)])}</span>`,
-      esc(e.cat && D.categories[e.cat] ? D.categories[e.cat] : '—'),
-      esc(ownerLabel(e.paidBy)),
-      esc(ownerLabel(e.owner)),
-      txAmount(e)
-    ]);
     const range = RANGES.find((r) => r[0] === txFilter.range);
     const summary = `<p class="muted tx-summary" role="status">${list.length} ${list.length === 1 ? 'transaction' : 'transactions'} · ${esc(range ? range[1].toLowerCase() : '')} · spending ${fmt(spending)} after refunds · income ${fmt(income)}</p>`;
     if (!list.length) return summary + '<p class="muted">Nothing matches. Clear the filters or widen the date range.</p>';
     return summary
-      + table('Transactions', [{ t: 'Date' }, { t: 'What' }, { t: 'Type' }, { t: 'Category' }, { t: 'Who' }, { t: 'Counts in' }, { t: 'Amount', num: true }], rows)
+      + table('Transactions', TX_HEAD, shown.map(txCells), true)
       + `<p class="muted">Newest first. Refunds and reimbursements are entered as their own transaction with the opposite sign. Transfers and card payments are not counted as spending.${list.length > shown.length ? ` Showing the first ${shown.length} of ${list.length}. Narrow the filters to see the rest.` : ''}</p>`;
   }
 
@@ -1442,9 +1505,7 @@
         <div class="field"><label for="f-type">Type</label>
           <select id="f-type" data-txf="type">${opt('', 'All types', txFilter.type)}${TYPE_OPTIONS.map((r) => opt(r[0], r[1], txFilter.type)).join('')}</select></div>
         <div class="field"><label for="f-cat">Category</label>
-          <select id="f-cat" data-txf="cat">${opt('', 'All categories', txFilter.cat)}${Object.keys(D.categories).map((k) => opt(k, D.categories[k], txFilter.cat)).join('')}</select></div>
-        <div class="field"><label for="f-paid">Paid or received by</label>
-          <select id="f-paid" data-txf="paidBy">${opt('', 'Anyone', txFilter.paidBy)}${memberList.map((m) => opt(m.id, m.label, txFilter.paidBy)).join('')}</select></div>
+          <select id="f-cat" data-txf="cat">${opt('', 'All categories', txFilter.cat)}${opt(NONE_CAT, 'No category', txFilter.cat)}${Object.keys(D.categories).map((k) => opt(k, D.categories[k], txFilter.cat)).join('')}</select></div>
         <div class="field"><label for="f-owner">Counts in</label>
           <select id="f-owner" data-txf="owner">${opt('', 'Everything', txFilter.owner)}${ownersInView().map((o) => opt(o, ownerLabel(o), txFilter.owner)).join('')}</select></div>
         <div class="field filter-clear"><button type="button" class="btn" data-tx-clear ${filtersActive() ? '' : 'disabled'}>Clear filters</button></div>
@@ -1466,7 +1527,7 @@
       </div>
       ${toolNote ? `<p class="tool-note" role="status">${esc(toolNote)}</p>` : ''}
       <div class="stack">
-        ${txDraft ? card('tx-title', 'Add a transaction', txForm(), 'wide') : ''}
+        ${txDraft ? card('tx-title', txDraft.editKey ? 'Edit a transaction' : 'Add a transaction', txForm(), 'wide') : ''}
         ${card('exp-title', 'Transactions', txFilterControls() + `<div id="tx-results">${txResultsHtml()}</div>`, 'wide')}
       </div>`;
   }
@@ -1535,9 +1596,16 @@
     const subsTotal = round2(sumOf(segs.map((x) => x.subs)));
     const scale = Math.max(incomeTotal, expenseTotal) || 1;
     const left = round2(incomeTotal - expenseTotal);
+    const incomeSegs = INCOME_TYPES.map(([k, label, color]) => ({ k, label, color, total: round2(sumMonthly(g.income.filter((p) => incomeTypeOf(p) === k))) })).filter((x) => x.total > 0);
     const incomeBar = incomeTotal > 0
-      ? `<div class="stack-bar" style="width:${(incomeTotal / scale * 100).toFixed(2)}%" role="img" aria-label="Income ${esc(fmtc(incomeTotal))} a month"><span class="bar-seg" style="flex:1;background:var(--leaf)" title="Income: ${esc(fmtc(incomeTotal))}"></span></div>`
+      ? `<div class="stack-bar" style="width:${(incomeTotal / scale * 100).toFixed(2)}%" role="img" aria-label="Income ${esc(fmtc(incomeTotal))} a month">${incomeSegs.map((x) => `<span class="bar-seg" style="flex:${x.total} 1 0;background:${x.color}" title="${esc(x.label)}: ${esc(fmtc(x.total))}"></span>`).join('')}</div>`
       : '<p class="muted">No income planned yet.</p>';
+    const incomeLegend = incomeSegs.map((x) => `
+      <li class="pie-item" title="${esc(x.label)}: ${esc(fmtc(x.total))}">
+        <span class="pie-swatch" style="background:${x.color}" aria-hidden="true"></span>
+        <span class="pie-name">${esc(x.label)}</span>
+        <span class="pie-val">${fmtc(x.total)} · ${pctText(pctOf(x.total, incomeTotal), 0)}</span>
+      </li>`).join('');
     const pieces = [];
     segs.forEach((x) => {
       if (x.regular > 0) pieces.push(`<span class="bar-seg" style="flex:${x.regular} 1 0;background:${x.color}" title="${esc(x.label)}: ${esc(fmtc(x.regular))}"></span>`);
@@ -1563,6 +1631,7 @@
       <div class="plan-chart">
         <p class="row"><span>Income</span><span>${fmtc(incomeTotal)} a month</span></p>
         ${incomeBar}
+        ${incomeSegs.length ? `<ul class="pie-legend plan-income-legend" role="list" aria-label="Income by type">${incomeLegend}</ul>` : ''}
         <p class="row"><span>Expenses</span><span>${fmtc(expenseTotal)} a month</span></p>
         ${expenseBar}
         ${verdict}
@@ -1583,8 +1652,8 @@
         <button type="button" class="btn btn-danger" data-plan-delete-confirm="${esc(p.id)}">Delete</button></span>`;
     }
     return `<span class="row-actions">
-      <button type="button" class="btn" data-plan-edit="${esc(p.id)}" aria-label="Edit ${esc(p.name)}">Edit</button>
-      <button type="button" class="btn" data-plan-delete="${esc(p.id)}" aria-label="Delete ${esc(p.name)}">Delete</button></span>`;
+      <button type="button" class="act-icon" data-plan-edit="${esc(p.id)}" aria-label="Edit ${esc(p.name)}" title="Edit">${ICON_PENCIL}</button>
+      <button type="button" class="act-icon" data-plan-delete="${esc(p.id)}" aria-label="Delete ${esc(p.name)}" title="Delete">${ICON_TRASH}</button></span>`;
   }
 
   // The next date an item is due: the saved date, moved forward by the frequency until it is today or later.
@@ -1611,8 +1680,8 @@
   }
   const dueText = (p) => { const d = nextDue(p); return d ? esc(formatDate(d)) : '—'; };
 
-  const PLAN_HEAD = [{ t: 'Category' }, { t: 'Description' }, { t: 'Frequency' }, { t: 'Due Date' }, { t: 'Amount', num: true }, { t: 'Monthly amount', num: true }, { t: 'Actions' }];
-  const SUB_HEAD = [{ t: 'Category' }, { t: 'Description' }, { t: 'Subscription' }, { t: 'Frequency' }, { t: 'Due Date' }, { t: 'Amount', num: true }, { t: 'Monthly amount', num: true }, { t: 'Actions' }];
+  const PLAN_HEAD = [{ t: 'Category', card: 'meta' }, { t: 'Description', card: 'title' }, { t: 'Frequency', card: 'meta' }, { t: 'Due Date', card: 'meta' }, { t: 'Amount', num: true, card: 'amount' }, { t: 'Monthly amount', num: true, card: 'secondary' }, { t: 'Actions' }];
+  const SUB_HEAD = [{ t: 'Category', card: 'meta' }, { t: 'Description', card: 'title' }, { t: 'Subscription', card: 'meta' }, { t: 'Frequency', card: 'meta' }, { t: 'Due Date', card: 'meta' }, { t: 'Amount', num: true, card: 'amount' }, { t: 'Monthly amount', num: true, card: 'secondary' }, { t: 'Actions' }];
 
   function renderPlanner() {
     const g = planGroups();
@@ -1622,7 +1691,7 @@
 
     const incomeTotal = sumMonthly(g.income);
     const incomeRows = g.income.map((p) => [
-      esc(together ? `Income · ${ownerLabel(p.owner)}` : 'Income'), esc(p.name), esc(freqLabel(p.freq)), dueText(p), fmtc(p.amount), fmtc(monthlyOf(p)), planActions(p)
+      esc(together ? `Income · ${ownerLabel(p.owner)}` : 'Income'), `${esc(p.name)} <span class="pay-meta">${esc(incomeTypeLabel(p))}</span>`, esc(freqLabel(p.freq)), dueText(p), fmtc(p.amount), fmtc(monthlyOf(p)), planActions(p)
     ]);
     if (incomeRows.length) incomeRows.push({ cells: ['Total income', '', '', '', '', fmtc(incomeTotal), ''], strong: true });
 
@@ -1662,17 +1731,16 @@
       </div>
       ${toolNote ? `<p class="tool-note" role="status">${esc(toolNote)}</p>` : ''}
       <div class="stack">
-        ${planPanel ? card('plan-form-title', planEditing ? 'Edit planner item' : 'Add a planner item', planForm(), 'wide') : ''}
         ${budgetPanel === 'goals' ? card('goals-title', 'Set budget goals', goalsForm(), 'wide') : ''}
         ${budgetPanel === 'cats' ? card('cats-title', 'Edit categories', catsForm(), 'wide') : ''}
         ${card('plan-chart-title', 'Monthly income and expenses', planChart(g), 'wide')}
         ${card('plan-income-title', 'Income',
-          incomeRows.length ? table('Planned income', PLAN_HEAD, incomeRows) : '<p class="muted">No income items yet. Use Add an item.</p>', 'wide')}
+          incomeRows.length ? table('Planned income', PLAN_HEAD, incomeRows, true) : '<p class="muted">No income items yet. Use Add an item.</p>', 'wide')}
         ${card('plan-exp-title', 'Regular Expense',
-          (regRows.length ? table('Planned regular expenses', PLAN_HEAD, regRows) : '<p class="muted">No expense items yet. Use Add an item.</p>')
+          (regRows.length ? table('Planned regular expenses', PLAN_HEAD, regRows, true) : '<p class="muted">No expense items yet. Use Add an item.</p>')
           + (together && regMembers.length ? '<p class="muted">Each person\'s items are added up into one line here. Open their view to see and change them.</p>' : ''), 'wide')}
         ${card('plan-sub-title', 'Subscriptions',
-          (subRows.length ? table('Planned subscriptions', SUB_HEAD, subRows) : '<p class="muted">No subscriptions yet. Use Add an item and choose Subscription.</p>')
+          (subRows.length ? table('Planned subscriptions', SUB_HEAD, subRows, true) : '<p class="muted">No subscriptions yet. Use Add an item and choose Subscription.</p>')
           + (subRows.length ? '<p class="muted">A subscription marked No is cancelled. It stays on the list but is left out of the totals, the chart and the budget goals.</p>' : ''), 'wide')}
       </div>`;
   }
@@ -1685,6 +1753,25 @@
     planDraft = item
       ? { kind, owner: item.owner, cat: item.cat, name: item.name, freq: item.freq, amount: String(item.amount), due: item.due || '', active: item.sub === 'no' ? 'no' : 'yes' }
       : { kind: 'expense', owner: who !== 'together' ? who : 'shared', cat: '', name: '', freq: 'monthly', amount: '', due: '', active: 'yes' };
+  }
+
+  // The planner's add and edit form opens as a modal. It is rebuilt on every page draw, so it always matches the draft.
+  function syncPlanDialog(opts) {
+    document.querySelectorAll('#plan-dialog').forEach((el) => el.remove());
+    if (!planPanel || !planDraft) return;
+    const dlg = document.createElement('dialog');
+    dlg.id = 'plan-dialog';
+    dlg.className = 'modal';
+    dlg.setAttribute('aria-labelledby', 'plan-form-title');
+    dlg.innerHTML = `<div class="modal-head"><h2 id="plan-form-title" class="card-label">${planEditing ? 'Edit planner item' : 'Add a planner item'}</h2></div><div class="modal-body">${planForm()}</div>`;
+    dlg.addEventListener('close', () => {
+      if (planPanel) { planPanel = false; planDraft = null; planEditing = null; planConfirm = null; route({ keepPlace: true, focus: '[data-open-plan]' }); }
+    });
+    view.appendChild(dlg);
+    dlg.showModal();
+    const want = opts && opts.focus ? dlg.querySelector(opts.focus) : null;
+    const first = want || dlg.querySelector('#plan-name');
+    if (first) first.focus({ preventScroll: true });
   }
 
   function planMonthlyText() {
@@ -1707,7 +1794,7 @@
           <div class="field"><label for="plan-owner">${isIncome ? 'Earned by' : 'Counts in'}</label>
             <select id="plan-owner" data-plan="owner">${ownerList.map((o) => opt(o, ownerLabel(o), d.owner)).join('')}</select></div>
         </div>
-        ${isIncome ? '' : `<div class="field"><label for="plan-cat">Category</label><select id="plan-cat" data-plan="cat">${cats}</select></div>`}
+        ${isIncome ? `<div class="field"><label for="plan-income-type">Income type</label><select id="plan-income-type" data-plan="incomeType">${INCOME_TYPES.map((t) => opt(t[0], t[1], incomeTypeOf(d))).join('')}</select></div>` : `<div class="field"><label for="plan-cat">Category</label><select id="plan-cat" data-plan="cat">${cats}</select></div>`}
         <div class="field"><label for="plan-name">Description</label>
           <input id="plan-name" type="text" maxlength="60" autocomplete="off" data-plan="name" value="${esc(d.name)}"></div>
         ${d.kind === 'subscription' ? `<div class="field"><label for="plan-active">Subscription</label>
@@ -1743,7 +1830,8 @@
     if (err) { toolError = err; return false; }
     const item = {
       flow: isIncome ? 'income' : 'expense', owner: d.owner, cat: isIncome ? '' : d.cat, name, freq: d.freq, amount,
-      sub: d.kind === 'subscription' ? (d.active === 'no' ? 'no' : 'yes') : '', due: d.due || ''
+      sub: d.kind === 'subscription' ? (d.active === 'no' ? 'no' : 'yes') : '', due: d.due || '',
+      incomeType: isIncome ? incomeTypeOf(d) : ''
     };
     if (isSample()) {
       if (planEditing) { const i = D.plan.findIndex((p) => p.id === planEditing); if (i !== -1) D.plan[i] = { id: planEditing, ...item }; }
@@ -1771,14 +1859,15 @@
   let catConfirm = null;
   let toolError = '';
   let txDraft = null;
+  let txConfirm = null; // key of the row waiting for a Yes/No delete
   let toolNote = '';
   const sampleOverrides = {}; // typed-in goals while looking at sample data: { owner: { cat: amount } }
 
   const MAX_CATEGORIES = 20;
-  const MAX_CAT_NAME = 30;
+  const MAX_CAT_NAME = 40;
 
   function resetBudgetTools() {
-    budgetPanel = null; goalsDraft = null; catDraft = null; catConfirm = null; toolError = ''; txDraft = null; toolNote = '';
+    budgetPanel = null; goalsDraft = null; catDraft = null; catConfirm = null; toolError = ''; txDraft = null; txConfirm = null; toolNote = '';
     planPanel = false; planDraft = null; planEditing = null; planConfirm = null;
     acctPanel = false; acctDraft = null; acctEditing = null; acctConfirm = null; acctError = ''; acctNote = '';
     groupsPanel = false; groupsDraft = null; holdNote = '';
@@ -1910,15 +1999,22 @@
 
   // ---- Categories
 
+  function freshCatDraft(fresh) {
+    const names = {};
+    Object.keys(D.categories).forEach((k) => { names[k] = D.categories[k]; });
+    return { names, newName: '', fresh };
+  }
+
   function openCats() {
     resetBudgetTools();
     budgetPanel = 'cats';
-    catDraft = { names: {}, newName: '' };
-    Object.keys(D.categories).forEach((k) => { catDraft.names[k] = D.categories[k]; });
+    catDraft = freshCatDraft([]);
   }
 
   function catsForm() {
-    const keys = Object.keys(D.categories).filter((k) => k !== 'other');
+    const fresh = catDraft.fresh || [];
+    const keys = Object.keys(D.categories).filter((k) => k !== 'other')
+      .sort((a, b) => D.categories[a].localeCompare(D.categories[b], undefined, { sensitivity: 'base' }));
     const rows = keys.map((k) => {
       if (catConfirm === k) {
         return `
@@ -1934,33 +2030,34 @@
           </li>`;
       }
       const uses = categoryUses(k);
+      const isNew = fresh.indexOf(k) !== -1;
       return `
-        <li class="member-row cat-row">
-          <span class="field cat-field">
-            <label for="cat-${k}">Name</label>
+        <li class="member-row cat-row${isNew ? ' cat-fresh' : ''}">
+          <div class="cat-line">
+            <label class="sr-only" for="cat-${k}">Name</label>
             <input id="cat-${k}" type="text" maxlength="${MAX_CAT_NAME}" autocomplete="off" data-cat-name="${k}" value="${esc(catDraft.names[k] === undefined ? D.categories[k] : catDraft.names[k])}">
-            <span class="pay-meta">${uses ? `Used by ${uses} ${uses === 1 ? 'transaction or planner item' : 'transactions and planner items'}, so it can't be deleted` : 'Not used by anything'}</span>
-          </span>
-          <span class="member-actions">
-            <button type="button" class="btn" data-cat-delete="${k}" aria-label="Delete ${esc(D.categories[k])}" ${uses ? 'disabled' : ''}>Delete</button>
-          </span>
+            <button type="button" class="act-icon" data-cat-delete="${k}" aria-label="Delete ${esc(D.categories[k])}" title="${uses ? 'In use' : 'Delete'}" ${uses ? 'disabled' : ''}>${ICON_TRASH}</button>
+          </div>
+          <span class="pay-meta">${isNew ? 'New. ' : ''}${uses ? `Used by ${uses} ${uses === 1 ? 'transaction or planner item' : 'transactions and planner items'}, so it can't be deleted` : 'Not used by anything'}</span>
         </li>`;
     }).join('');
     const full = Object.keys(D.categories).length >= MAX_CATEGORIES;
     return `
       <form class="member-form" data-cats-form novalidate>
+        <div class="cat-head" aria-hidden="true">Name</div>
         <ul class="plain-list">${rows}
           ${D.categories.other ? '<li class="member-row"><span class="pay-main"><span class="pay-name">Other</span><span class="pay-meta">Catch-all for anything unsorted. It can\'t be changed.</span></span></li>' : ''}
         </ul>
         <div class="field">
-          <label for="cat-new">Add a category</label>
-          <input id="cat-new" type="text" maxlength="${MAX_CAT_NAME}" autocomplete="off" value="${esc(catDraft.newName)}" placeholder="${full ? 'Limit reached' : 'For example, Travel'}" ${full ? 'disabled' : ''}>
+          <label for="cat-new">Add categories</label>
+          <input id="cat-new" type="text" maxlength="300" autocomplete="off" value="${esc(catDraft.newName)}" placeholder="${full ? 'Limit reached' : 'For example, Travel, Gifts, Pets'}" ${full ? 'disabled' : ''}>
+          <p class="muted">Separate several names with commas. Up to ${MAX_CAT_NAME} characters each.</p>
         </div>
         ${toolError ? `<p class="form-error" role="alert">${esc(toolError)}</p>` : ''}
         ${sampleNote()}
         <div class="btn-row">
           <button type="submit" class="btn btn-primary">Save categories</button>
-          <button type="button" class="btn" data-tool-cancel>Cancel</button>
+          <button type="button" class="btn" data-tool-cancel>Close</button>
         </div>
       </form>`;
   }
@@ -1973,30 +2070,41 @@
     keys.forEach((k) => {
       const n = String(catDraft.names[k] === undefined ? D.categories[k] : catDraft.names[k]).trim().replace(/\s+/g, ' ');
       if (!n) { bad = 'Every category needs a name.'; return; }
+      if (n.length > MAX_CAT_NAME) { bad = `"${n}" is longer than ${MAX_CAT_NAME} characters.`; return; }
       if (seen.has(n.toLowerCase())) { bad = `There are two categories called "${n}".`; return; }
       seen.add(n.toLowerCase());
       names[k] = n;
     });
-    const added = catDraft.newName.trim().replace(/\s+/g, ' ');
-    if (!bad && added) {
-      if (seen.has(added.toLowerCase())) bad = `There is already a category called "${added}".`;
-      else if (Object.keys(D.categories).length >= MAX_CATEGORIES) bad = `Up to ${MAX_CATEGORIES} categories.`;
+    const added = String(catDraft.newName).split(',').map((x) => x.trim().replace(/\s+/g, ' ')).filter(Boolean);
+    if (!bad) {
+      added.forEach((n) => {
+        if (bad) return;
+        if (n.length > MAX_CAT_NAME) bad = `"${n}" is longer than ${MAX_CAT_NAME} characters.`;
+        else if (seen.has(n.toLowerCase())) bad = `There is already a category called "${n}".`;
+        else seen.add(n.toLowerCase());
+      });
     }
+    const room = MAX_CATEGORIES - Object.keys(D.categories).length;
+    if (!bad && added.length > room) bad = `Up to ${MAX_CATEGORIES} categories. You can add ${Math.max(0, room)} more.`;
     if (bad) { toolError = bad; return false; }
 
     const now = Date.now();
     const out = [];
     const renamed = keys.filter((k) => names[k] !== D.categories[k]);
+    const freshKeys = [];
     if (isSample()) {
       renamed.forEach((k) => { D.categories[k] = names[k]; });
-      if (added) D.categories[newId('c')] = added;
+      added.forEach((n) => { const id = newId('c'); D.categories[id] = n; freshKeys.push(id); });
     } else {
       renamed.forEach((k) => out.push({ id: k, kind: 'category', updatedAt: now, label: names[k] }));
-      if (added) out.push({ id: newId('c'), kind: 'category', updatedAt: now, label: added });
+      added.forEach((n) => { const id = newId('c'); freshKeys.push(id); out.push({ id, kind: 'category', updatedAt: now, label: n }); });
       if (out.length) { writeRecords(out); refreshData(); }
     }
-    const count = renamed.length + (added ? 1 : 0);
-    toolNote = count ? `Saved ${count} category ${count === 1 ? 'change' : 'changes'}.` : 'No changes.';
+    catDraft = freshCatDraft(freshKeys);
+    toolError = '';
+    toolNote = added.length
+      ? `Added ${added.length} ${added.length === 1 ? 'category' : 'categories'}.`
+      : renamed.length ? `Saved ${renamed.length} ${renamed.length === 1 ? 'change' : 'changes'}.` : 'No changes.';
     return true;
   }
 
@@ -2017,11 +2125,63 @@
       writeRecords(out);
       refreshData();
     }
-    delete catDraft.names[key];
+    if (catDraft) { delete catDraft.names[key]; catDraft.fresh = (catDraft.fresh || []).filter((k) => k !== key); }
     toolNote = 'Category deleted.';
   }
 
   // ---- Manual transactions
+
+  const txByKey = (key) => {
+    const e = D.expenses.map((x, i) => ({ ...x, key: x.id || `s${i}` })).find((x) => x.key === key);
+    return e ? { ...e, date: dateFromDaysAgo(e.daysAgo) } : null;
+  };
+
+  function txActions(e) {
+    const k = esc(e.key);
+    if (txConfirm === e.key) {
+      return `<span class="row-actions"><span class="muted">Delete this?</span><button type="button" class="btn btn-danger" data-tx-delete-yes="${k}">Yes, delete</button><button type="button" class="btn" data-tx-delete-no>No</button></span>`;
+    }
+    return `<span class="row-actions"><button type="button" class="act-icon" data-tx-edit="${k}" aria-label="Edit ${esc(e.name)}" title="Edit">${ICON_PENCIL}</button><button type="button" class="act-icon" data-tx-delete="${k}" aria-label="Delete ${esc(e.name)}" title="Delete">${ICON_TRASH}</button></span>`;
+  }
+
+  function openTxEdit(key) {
+    const e = txByKey(key);
+    if (!e) return;
+    resetBudgetTools();
+    txDraft = {
+      type: e.type, date: isoDay(e.date), name: e.name, amount: Number(e.amount).toFixed(2), cat: e.cat || '', catTouched: true,
+      paidBy: e.paidBy, owner: e.owner, hint: '', editKey: key
+    };
+  }
+
+  function deleteTx(key) {
+    const e = txByKey(key);
+    txConfirm = null;
+    if (!e) return;
+    if (isSample()) D.expenses.splice(Number(String(key).slice(1)), 1);
+    else writeRecords([{ id: key, kind: 'expense', updatedAt: Date.now(), deleted: true }]);
+    if (txDraft && txDraft.editKey === key) txDraft = null;
+    refreshData();
+    toolNote = `Deleted ${e.name}.`;
+  }
+
+  function saveTxEdit(d, name, amount, cat, key) {
+    if (isSample()) {
+      const idx = Number(String(d.editKey).slice(1));
+      if (!D.expenses[idx]) { toolError = 'That transaction is no longer here.'; return false; }
+      D.expenses[idx] = { daysAgo: daysBetween(parseDay(d.date), startOfToday()), name, type: d.type, cat, amount, paidBy: payerOf(d), owner: d.owner };
+      setRule(key, cat);
+    } else {
+      const old = records.find((r) => r.id === d.editKey && r.kind === 'expense' && !r.deleted);
+      if (!old) { toolError = 'That transaction is no longer here.'; return false; }
+      const list = [{ ...old, updatedAt: Date.now(), date: d.date, name, type: d.type, cat, amount, paidBy: payerOf(d), owner: d.owner }];
+      if (key && cat) list.push({ id: Store.ruleId(key), kind: 'rule', updatedAt: Date.now(), vendor: key, cat });
+      writeRecords(list);
+      refreshData();
+    }
+    toolNote = `Saved changes to ${name}.`;
+    return true;
+  }
 
   function openTx() {
     resetBudgetTools();
@@ -2033,16 +2193,17 @@
     };
   }
 
+  // Paid by is no longer asked: a personal item is paid by its owner, a joint one by whoever is adding it.
+  const payerOf = (d) => (d.owner !== 'shared' ? d.owner : d.paidBy);
+
   const hasCategory = (type) => type === 'expense' || type === 'refund';
 
   function txForm() {
     const d = txDraft;
     const opt = (v, label, cur) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(label)}</option>`;
-    const cats = `<option value=""${d.cat === '' ? ' selected' : ''} disabled>Choose a category</option>`
+    const cats = `<option value=""${d.cat === '' ? ' selected' : ''}>No category</option>`
       + Object.keys(D.categories).map((k) => opt(k, D.categories[k], d.cat)).join('');
-    const payers = memberList.map((m) => opt(m.id, m.label, d.paidBy)).join('');
     const owners = ownersInView().map((o) => opt(o, ownerLabel(o), d.owner)).join('');
-    const whoLabel = d.type === 'expense' ? 'Paid by' : d.type === 'transfer' ? 'Moved by' : 'Received by';
     const nameLabel = d.type === 'income' ? 'Source or description' : 'Store or description';
     const hint = d.type === 'refund'
       ? 'Enter the amount as a positive number. It is subtracted from that category, so it shows as a negative amount.'
@@ -2063,15 +2224,12 @@
         ${hasCategory(d.type) ? `<div class="field"><label for="tx-cat">Category</label>
           <select id="tx-cat" data-tx="cat">${cats}</select>
           <p class="muted tx-hint" id="tx-hint" aria-live="polite">${esc(d.hint)}</p></div>` : ''}
-        <div class="field-row">
-          <div class="field"><label for="tx-paid">${whoLabel}</label><select id="tx-paid" data-tx="paidBy">${payers}</select></div>
-          <div class="field"><label for="tx-owner">Counts in</label><select id="tx-owner" data-tx="owner">${owners}</select></div>
-        </div>
+        <div class="field"><label for="tx-owner">Counts in</label><select id="tx-owner" data-tx="owner">${owners}</select></div>
         ${toolError ? `<p class="form-error" role="alert">${esc(toolError)}</p>` : ''}
         ${sampleNote()}
         ${hasCategory(d.type) ? '<p class="muted">Kanopi remembers the category you pick for each store, and fills it in next time.</p>' : ''}
         <div class="btn-row">
-          <button type="submit" class="btn btn-primary">Add transaction</button>
+          <button type="submit" class="btn btn-primary">${d.editKey ? 'Save changes' : 'Add transaction'}</button>
           <button type="button" class="btn" data-tool-cancel>Cancel</button>
         </div>
       </form>`;
@@ -2095,7 +2253,7 @@
   }
 
   function setRule(key, cat) {
-    if (!key) return;
+    if (!key || !cat) return; // a blank category teaches nothing
     if (isSample()) { if (!D.rules) D.rules = {}; D.rules[key] = cat; return; }
     writeRecords([{ id: Store.ruleId(key), kind: 'rule', updatedAt: Date.now(), vendor: key, cat }]);
     refreshData();
@@ -2116,14 +2274,15 @@
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date) || Number.isNaN(parseDay(d.date).getTime())) err = 'Pick a date.';
     else if (!name) err = 'Enter a store or description.';
     else if (!d.amount.trim() || !Number.isFinite(amount) || amount <= 0 || amount > 10000000) err = 'Enter an amount above $0.';
-    else if (withCat && !D.categories[d.cat]) err = 'Choose a category.';
+    else if (withCat && d.cat && !D.categories[d.cat]) err = 'Choose a category from the list.';
     if (err) { toolError = err; return false; }
 
     const key = withCat ? Store.vendorKey(name) : '';
     const cat = withCat ? d.cat : '';
+    if (d.editKey) return saveTxEdit(d, name, amount, cat, key);
     if (isSample()) {
       const when = parseDay(d.date);
-      const item = { daysAgo: daysBetween(when, startOfToday()), name, type: d.type, cat, amount, paidBy: d.paidBy, owner: d.owner };
+      const item = { daysAgo: daysBetween(when, startOfToday()), name, type: d.type, cat, amount, paidBy: payerOf(d), owner: d.owner };
       D.expenses.push(item);
       const today = startOfToday();
       const spend = Store.spendOf(item);
@@ -2134,9 +2293,9 @@
       }
       setRule(key, cat);
     } else {
-      const rec = { id: newId('e'), kind: 'expense', updatedAt: Date.now(), date: d.date, name, type: d.type, cat, amount, paidBy: d.paidBy, owner: d.owner };
+      const rec = { id: newId('e'), kind: 'expense', updatedAt: Date.now(), date: d.date, name, type: d.type, cat, amount, paidBy: payerOf(d), owner: d.owner };
       const list = [rec];
-      if (key) list.push({ id: Store.ruleId(key), kind: 'rule', updatedAt: Date.now(), vendor: key, cat });
+      if (key && cat) list.push({ id: Store.ruleId(key), kind: 'rule', updatedAt: Date.now(), vendor: key, cat });
       writeRecords(list);
       refreshData();
     }
@@ -2455,6 +2614,7 @@
             <input id="imp-file" type="file" accept=".csv,.txt,text/csv,text/plain"></div>
           <div class="field"><label for="imp-paste">Or paste the rows, including the heading row</label>
             <textarea id="imp-paste" rows="4" data-imp="paste" spellcheck="false">${esc(imp.paste || '')}</textarea></div>
+          <p class="muted" id="imp-floor" aria-live="polite">${floorText()}</p>
           <p class="muted">The file is read on this device only. Delete any account-number column first.</p>
           ${err}
           <div class="btn-row"><button type="submit" class="btn btn-primary">Next: match the columns</button><button type="button" class="btn" data-data-cancel>Cancel</button></div>
@@ -2506,9 +2666,10 @@
     ];
     if (imp.module === 'holdings') { lines.push(['Already there, will be updated', r.same]); lines.push(['In this account but not in the file, will be removed', r.removed.length]); }
     else lines.push(['Already imported, skipped', r.same]);
+    if (r.before) lines.push([`Dated before ${formatDate(parseDay(r.floor))}, already imported, skipped`, r.before]);
     if (r.unreadable) lines.push(['Could not be read', r.unreadable]);
     if (r.skipped) lines.push([imp.module === 'holdings' ? 'Repeated ticker, skipped' : 'Other kinds of rows, skipped', r.skipped]);
-    if (r.uncategorized) lines.push(['Need a category (shown as Other)', r.uncategorized]);
+    if (r.uncategorized) lines.push(['No category yet (add one later)', r.uncategorized]);
     const first = r.fresh.slice(0, 10).map((x) => {
       if (x.kind === 'expense') return [esc(formatDate(parseDay(x.date))), esc(x.name), `<span class="pill">${esc(x.type)}</span>`, x.cat ? esc(D.categories[x.cat] || x.cat) : '—', money2.format(x.amount)];
       if (x.kind === 'ptx') return [esc(formatDate(parseDay(x.date))), esc(x.type), esc(x.ticker || '—'), x.qty ? String(x.qty) : '—', money2.format(x.amount)];
@@ -2542,6 +2703,32 @@
     if (!memberList.length) { dataNote = { text: 'Add a family member first (Settings > Family), so Kanopi knows who the file is for.', error: true }; return; }
     dataPanel = 'import';
     imp = { stage: 'setup', member: who !== 'together' ? who : (memberList[0] ? memberList[0].id : ''), module: 'budget', bank: '', account: '', countsIn: 'member', acctKind: 'checking', paste: '', text: '', fileName: '', error: '', map: {}, rows: null, headerIdx: 0, result: null, fromSaved: false };
+  }
+
+  // Latest date already on this device for a source (budget: member + bank + account; activity: account).
+  // Tombstoned rows don't count, so deleting the newest row lets that day be imported again.
+  function latestImportDate(pred) {
+    let latest = '';
+    records.forEach((r) => { if (!r.deleted && r.date && pred(r) && r.date > latest) latest = r.date; });
+    return latest;
+  }
+  function importFloor() {
+    if (!imp || imp.module === 'holdings') return '';
+    if (imp.module === 'budget') {
+      if (!imp.member || !imp.bank.trim()) return '';
+      const src = KanopiImporter.srcKey(imp.member, imp.bank, imp.acctKind);
+      return latestImportDate((r) => r.kind === 'expense' && r.src === src);
+    }
+    return imp.account ? latestImportDate((r) => r.kind === 'ptx' && r.account === imp.account) : '';
+  }
+
+  function floorText() {
+    const f = importFloor();
+    return f ? `The last import from this source runs through ${esc(formatDate(parseDay(f)))}. This file must start on or after that date, so rows already here are not added twice.` : '';
+  }
+  function updateFloorText() {
+    const el = document.getElementById('imp-floor');
+    if (el) el.innerHTML = floorText();
   }
 
   function impToMap() {
@@ -2586,6 +2773,9 @@
       out = KanopiImporter.parseHoldings(rows, m, { account: imp.account });
     }
     if (out.problems.length && !out.records.length) { imp.error = out.problems[0]; return false; }
+    const floor = importFloor();
+    const before = floor ? out.records.filter((r) => r.date < floor).length : 0;
+    if (floor) out.records = out.records.filter((r) => r.date >= floor);
     const have = new Set(records.map((r) => r.id));
     const fresh = out.records.filter((r) => !have.has(r.id));
     const fileIds = new Set(out.records.map((r) => r.id));
@@ -2594,7 +2784,8 @@
     imp.result = {
       rows: out.rows, all: out.records, fresh: imp.module === 'holdings' ? out.records.filter((r) => !have.has(r.id)) : fresh,
       same: out.records.length - (imp.module === 'holdings' ? out.records.filter((r) => !have.has(r.id)).length : fresh.length),
-      unreadable: out.unreadable || 0, skipped: out.skipped || 0, uncategorized: out.uncategorized || 0, removed, problems: out.problems
+      unreadable: out.unreadable || 0, skipped: out.skipped || 0, uncategorized: out.uncategorized || 0, removed, problems: out.problems,
+      before, floor
     };
     imp.stage = 'preview';
     return true;
@@ -2860,8 +3051,76 @@
           `<p class="row"><span>App</span><span>Kanopi</span></p>
            <p class="row"><span>Version</span><span>${esc(V.version)}</span></p>
            <p class="row"><span>Released</span><span>${esc(V.released)}</span></p>
-           <p class="row"><span>Data</span><span>${isSample() ? 'Sample only' : 'Your data'}</span></p>`)}
+           <p class="row"><span>Data</span><span>${isSample() ? 'Sample only' : 'Your data'}</span></p>
+           <p class="btn-row"><button type="button" class="btn" data-check-version>Check for new version</button></p>
+           <p class="muted" id="version-status" role="status" aria-live="polite"></p>
+           <p class="muted">Red Panda and Koala's first joint project, started on November 21, 2026.</p>`)}
+        ${card('design-title', 'Design', designCard())}
       </div>`;
+  }
+
+  // Settings > Design: the fonts, colours, buttons, icons and pills the app uses, shown as they look.
+  function designCard() {
+    const colours = [
+      ['Mint', '#A8E6CF', 'Accents, Other income, highlights'],
+      ['Mint soft', '#E6F7EF', 'Total rows, hover, group rows'],
+      ['Leaf', '#2E9E76', 'Links, meters, focus, Investments income'],
+      ['Leaf deep', '#1F7A5A', 'Positive amounts, Paycheck income, active tabs'],
+      ['Ink', '#0E3B2B', 'Primary text, primary buttons'],
+      ['Muted', '#3D5A4E', 'Secondary text'],
+      ['Bark', '#7A5A3C', 'Danger buttons'],
+      ['Money out', '#B3261E', 'Expense amounts'],
+      ['Border', '#CFE6DA', 'Card edges, rules'],
+      ['Page', '#F5FBF8', 'Page background'],
+      ['Card', '#FFFFFF', 'Cards and inputs']
+    ];
+    const swatch = (name, hex, use) => `<li class="ds-sw"><span class="ds-chip" style="background:${hex}" aria-hidden="true"></span><span><strong>${esc(name)}</strong><br><span class="muted">${esc(hex)} · ${esc(use)}</span></span></li>`;
+    const chart = PIE_COLORS.concat([PIE_OTHER]).map((c) => `<span class="ds-chip ds-chip-sm" style="background:${c}" title="${esc(c)}" aria-label="${esc(c)}"></span>`).join('');
+    const navIcons = Array.from(document.querySelectorAll('.nav a')).map((a) => {
+      const svg = a.querySelector('svg');
+      return svg ? `<li class="ds-icon">${svg.outerHTML}<span class="muted">${esc(a.textContent.trim())}</span></li>` : '';
+    }).join('');
+    const members = memberList.map((m) => `<span class="ds-avatar">${avatarHtml(m.id)}<span class="muted">${esc(m.label)}</span></span>`).join('');
+    return `
+      <h3 class="ds-h">Fonts</h3>
+      <p class="ds-title">Mouse Memoirs: titles and card headings</p>
+      <p class="ds-body">Noto Sans regular: body text and table cells. <strong>Noto Sans bold (600 and 700): labels, names and amounts.</strong></p>
+      <p class="muted">Titles use the Mouse Memoirs font. Everything else uses Noto Sans. Both are included in the app, so they work offline.</p>
+
+      <h3 class="ds-h">Colours</h3>
+      <ul class="ds-swatches" role="list">${colours.map(([n, h, u]) => swatch(n, h, u)).join('')}</ul>
+      <p class="ds-h2">Chart colours</p>
+      <p class="muted">Expense categories use these, in this order. Greens are reserved for income.</p>
+      <div class="ds-chart-row">${chart}</div>
+
+      <h3 class="ds-h">Buttons and links</h3>
+      <div class="btn-row">
+        <button type="button" class="btn">Button</button>
+        <button type="button" class="btn btn-primary">Primary</button>
+        <button type="button" class="btn btn-danger">Danger</button>
+        <button type="button" class="btn" disabled>Disabled</button>
+      </div>
+      <p><button type="button" class="text-link link-btn">Text link</button></p>
+
+      <h3 class="ds-h">Icon buttons</h3>
+      <div class="btn-row">
+        <button type="button" class="act-icon" aria-label="Edit sample" title="Edit">${ICON_PENCIL}</button>
+        <button type="button" class="act-icon" aria-label="Delete sample" title="Delete">${ICON_TRASH}</button>
+      </div>
+
+      <h3 class="ds-h">Navigation icons</h3>
+      <ul class="ds-icons" role="list">${navIcons}</ul>
+
+      <h3 class="ds-h">Tags</h3>
+      <div class="btn-row">
+        <span class="pill">Yes</span>
+        <span class="pill pill-off">No</span>
+        <span class="pill pill-long">Long term</span>
+        <span class="pill pill-short">Short term</span>
+      </div>
+
+      <h3 class="ds-h">Avatars</h3>
+      <div class="ds-avatars">${members}</div>`;
   }
 
   // ---- Routing -----------------------------------------------------------
@@ -2921,6 +3180,7 @@
     if (banner) banner.textContent = isSample() ? 'Sample data. Not connected to any accounts.' : 'Your data, stored on this device only.';
     document.title = `${page.doc ? page.title + ' · ' + page.doc : page.title} · Kanopi`;
     view.innerHTML = page.render();
+    syncPlanDialog(opts);
     renderWhoMenu();
 
     document.querySelectorAll('.nav a').forEach((a) => {
@@ -2948,6 +3208,8 @@
       route({ keepPlace: true, focus: `[data-who="${who}"]` });
       return;
     }
+    if (t.closest('[data-check-version]')) { checkForNewVersion(); return; }
+    if (t.closest('[data-reload-app]')) { window.location.reload(); return; }
     if (t.closest('[data-data-export]')) { resetDataPanel(); dataNote = null; dataPanel = 'export'; route({ keepPlace: true, focus: '#export-pw' }); return; }
     if (t.closest('[data-data-restore]')) { resetDataPanel(); dataNote = null; dataPanel = 'restore'; restore = { stage: 'pick', mode: 'merge' }; route({ keepPlace: true, focus: '#restore-file' }); return; }
     if (t.closest('[data-data-replace]')) { resetDataPanel(); dataNote = null; dataPanel = 'restore'; restore = { stage: 'pick', mode: 'replace' }; route({ keepPlace: true, focus: '#restore-file' }); return; }
@@ -3002,6 +3264,13 @@
     if (t.closest('[data-open-goals]')) { openGoals(); route({ keepPlace: true, focus: '[data-goal]' }); return; }
     if (t.closest('[data-open-cats]')) { openCats(); route({ keepPlace: true, focus: '[data-cat-name]' }); return; }
     if (t.closest('[data-open-tx]')) { openTx(); route({ keepPlace: true, focus: '#tx-name' }); return; }
+    const txEdit = t.closest('[data-tx-edit]');
+    if (txEdit) { openTxEdit(txEdit.dataset.txEdit); route({ keepPlace: true, focus: '#tx-name' }); return; }
+    const txDel = t.closest('[data-tx-delete]');
+    if (txDel) { txConfirm = txDel.dataset.txDelete; route({ keepPlace: true, focus: '[data-tx-delete-yes]' }); return; }
+    if (t.closest('[data-tx-delete-no]')) { txConfirm = null; route({ keepPlace: true, focus: '[data-open-tx]' }); return; }
+    const txYes = t.closest('[data-tx-delete-yes]');
+    if (txYes) { deleteTx(txYes.dataset.txDeleteYes); route({ keepPlace: true, focus: '[data-open-tx]' }); return; }
     if (t.closest('[data-open-plan]')) { openPlan(null); route({ keepPlace: true, focus: '#plan-name' }); return; }
     const planEdit = t.closest('[data-plan-edit]');
     if (planEdit) {
@@ -3113,7 +3382,7 @@
     else if (el.id === 'cat-new' && catDraft) catDraft.newName = el.value;
     else if (el.matches('[data-tx]') && txDraft && el.type !== 'checkbox') txDraft[el.dataset.tx] = el.value;
     else if (el.matches('[data-txf]')) { txFilter[el.dataset.txf] = el.value; updateTxResults(); }
-    else if (el.matches('[data-imp]') && imp) { imp[el.dataset.imp] = el.value; }
+    else if (el.matches('[data-imp]') && imp) { imp[el.dataset.imp] = el.value; if (el.dataset.imp === 'bank') updateFloorText(); }
     else if (el.matches('[data-group-input]')) { if (!groupsDraft) groupsDraft = {}; groupsDraft[el.dataset.groupInput] = el.value; }
     else if (el.matches('[data-acct]') && acctDraft) {
       if (el.dataset.acct === 'last4') { el.value = el.value.replace(/\D/g, '').slice(0, 4); }
@@ -3140,6 +3409,7 @@
     }
     if (el.matches('[data-imp]') && imp) {
       imp[el.dataset.imp] = el.value;
+      if (el.dataset.imp === 'acctKind' || el.dataset.imp === 'account') updateFloorText();
       if (el.dataset.imp === 'module' || el.dataset.imp === 'member') { if (el.dataset.imp === 'member') imp.account = ''; route({ keepPlace: true, focus: `#imp-${el.dataset.imp}` }); }
       return;
     }
@@ -3180,7 +3450,7 @@
     }
     if (event.target.matches('[data-cats-form]')) {
       event.preventDefault(); toolError = '';
-      if (catDraft && saveCategories()) { budgetPanel = null; catDraft = null; route({ keepPlace: true, focus: '[data-open-cats]' }); } else route({ keepPlace: true, focus: '.form-error' });
+      if (catDraft && saveCategories()) route({ keepPlace: true, focus: '#cat-new' }); else route({ keepPlace: true, focus: '.form-error' });
       return;
     }
     if (event.target.matches('[data-imp-setup]')) {
@@ -3280,6 +3550,27 @@
     updateText.textContent = text;
     updateRefresh.hidden = !canRefresh;
     updateBanner.hidden = false;
+  }
+
+  // Asks the server (not the offline cache) for version.js and compares it with the running version.
+  function checkForNewVersion() {
+    const status = document.getElementById('version-status');
+    if (!status) return;
+    if (navigator.onLine === false) { status.textContent = 'You are offline. Connect to check for a new version.'; return; }
+    status.textContent = 'Checking…';
+    fetch('version.js?check=' + Date.now(), { cache: 'no-store' })
+      .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+      .then((text) => {
+        const m = text.match(/version:\s*'([^']+)'/);
+        if (!m) throw new Error('no version found');
+        const latest = m[1];
+        if (latest === V.version) {
+          status.textContent = `You have the latest version (${V.version}).`;
+        } else {
+          status.innerHTML = `Version ${esc(latest)} is available. <button type="button" class="btn" data-reload-app>Reload to update</button>`;
+        }
+      })
+      .catch(() => { status.textContent = 'Could not check for a new version. Try again later.'; });
   }
 
   if (updateRefresh) updateRefresh.addEventListener('click', () => { window.location.reload(); });

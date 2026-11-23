@@ -3,6 +3,15 @@
 Versions follow MAJOR.MINOR.PATCH. The current version lives in `version.js`.
 Each deployment gets a line here, newest first.
 
+## 1.1.0 - 2026-11-22
+
+Settings > About gets a version check and credits. Budget layouts and a Design section in Settings.
+
+- Budget > Transactions: desktop shows a table; phones show cards with edit and delete icons beside the description and the avatar under the date and category.
+- Budget > Planner: phones show each item as a card. Income bar and income types use the three greens (Paycheck darkest).
+- Settings > Design: fonts, colours, buttons, icon buttons, navigation icons, tags and avatars, shown as they look.
+- Settings > About: Check for new version button (asks the server for version.js and offers a reload when a newer version exists). Credits line added.
+
 ## 1.0.0 - 2026-11-22
 
 First tracked release. Placeholder data only; not connected to any accounts.
@@ -18,6 +27,17 @@ First tracked release. Placeholder data only; not connected to any accounts.
 - Data card: Upload another family member's backup (merges), Back up everything, and Restore from backup (erases this device first, with a confirmation button).
 - Budget: new Stores page for learned stores (moved out of Settings). Menu order is now Home, Budget, Portfolio, Taxes.
 - Family: your own data starts with no family members (add them in Settings). Sample data uses Red Panda and Koala.
+- Icon: dark version of the app icon (deep green, light leaves). The home-screen icon is now dark, and browser tab icons follow the phone light or dark setting.
+- Budget > Transactions: each row has Edit and Delete. Edit reuses the add form. Delete asks Yes or No in the row. Deleting an imported row keeps it deleted if the same file is imported again.
+- Budget > Transactions: Paid by is removed. Counts in is the only person field, and the table has one Who column. Joint items record whoever added them.
+- Budget > Transactions: a transaction with no category is left as No category (filterable). Categorising one store also fills in similar names next time.
+- Budget > Transactions: each row shows the amount large on the right (red for spending, green for income and refunds). Details are on the left. Mobile hides the field names.
+- Planner: Add an item opens a dialog. Edit and delete are icons.
+- Categories: one Name column with a trash icon, names up to 40 characters. Add several at once by separating them with commas. The list is A to Z, and newly added categories are highlighted.
+- Budget > Transactions: each card shows the owner's avatar in the top right (Joint shows both avatars). The Counts in text is gone.
+- Planner: on phones the edit and delete icons sit on the same line as the row title, and the Actions label is hidden.
+- Planner: expenses never use green. Income items have a type (Paycheck, Investments, Other), and the income bar is shaded in greys with Paycheck darkest. Sample Salary items are Paycheck.
+- Import only appends: rows dated before the last imported date from the same source (member, bank and account kind; or account for Portfolio activity) are skipped and counted. A file must start on or after that date. Rows on that date are kept only if they are new.
 - Budget > Planner: "Short description" is now "Description"; new Due Date column (next due date, rolls forward by frequency); the Expenses table is now "Regular Expense"; new Subscriptions table with a Yes/No Subscription field (No = cancelled: listed, but left out of totals, chart and goals); subscriptions show as a lighter shade of each segment in the Expenses bar.
 - Budget: sample month now shows an over-budget state (total and three categories); an over-budget total swaps the leaf meter for poop icons and shows an "Over budget by" line, also on Home.
 - Budget: "Where the money goes" is a pie chart with a legend. The "Cooking at home vs eating out" chart is removed.

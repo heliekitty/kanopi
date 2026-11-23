@@ -8,9 +8,10 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Kanopi">
   <title>Kanopi</title>
-  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <link rel="icon" href="icons/icon-192.png" type="image/png" media="(prefers-color-scheme: light)">
+  <link rel="icon" href="icons/icon-192-dark.png" type="image/png" media="(prefers-color-scheme: dark)">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon-dark.png">
   <style>
 /* Kanopi: Mint design system v0.4 (D12, D26, provisional).
    Desktop first (1440 design width), responsive down to mobile.
@@ -897,6 +898,12 @@ body { line-height: 1.4; }
     display: block; text-align: left; font-weight: 700; padding-bottom: 4px;
   }
   .tbl td:first-child::before { content: none; }
+  /* Planner rows: the icon buttons sit on the same line as the row title */
+  .tbl tr.has-act { position: relative; }
+  .tbl tr.has-act > td.act-cell { display: block; position: absolute; top: 4px; right: 0; padding: 0; border: 0; }
+  .tbl tr.has-act > td.act-cell::before { content: none; }
+  .tbl td:empty::before { content: none; }
+  .tbl tr.has-act > td:first-child { padding-right: 96px; }
   .tbl td .cell-sub { display: inline; margin-left: 6px; }
 }
 
@@ -1222,6 +1229,67 @@ body::before { content: ""; position: fixed; top: 0; left: 0; right: 0; height: 
 .lot-acc summary { cursor: pointer; min-height: var(--touch); display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; font-weight: 700; }
 .lot-scroll.scroll { max-height: 660px; overflow-y: auto; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
 .lot-scroll.scroll:focus-visible { outline: 3px solid var(--mint-strong); outline-offset: 2px; }
+/* Budget transactions: details flush left, amount large and flush right */
+.tx-list { list-style: none; margin: 8px 0 0; padding: 0; }
+.tx-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.tx-side { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.tx-who { display: inline-flex; }
+.tx-who .avatar { width: 32px; height: 32px; }
+.avatar-pair { display: inline-flex; align-items: center; }
+.avatar-pair .avatar + .avatar { margin-left: -10px; }
+.tx-main { display: flex; flex-direction: column; gap: 2px; text-align: left; min-width: 0; }
+.tx-name { font-weight: 700; overflow-wrap: anywhere; }
+.tx-meta { font-size: 13px; color: var(--muted); }
+.tx-amt { font-size: 20px; font-weight: 700; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--ink); }
+.tx-amt.out { color: #B3261E; }
+.tx-amt.in { color: var(--leaf-deep); }
+.tx-title { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; min-width: 0; }
+.tx-title .row-actions { display: inline-flex; gap: 6px; }
+.tx-title .act-icon { width: 36px; height: 36px; }
+.tx-block { display: flex; margin-top: 4px; }
+.tx-sec { font-size: 13px; color: var(--muted); text-align: right; white-space: nowrap; }
+.tx-row.strong { background: var(--mint-soft); padding-left: 8px; padding-right: 8px; border-radius: 8px; }
+/* Settings > Design */
+.ds-h { font-family: var(--font-title); font-weight: 400; font-size: 22px; margin: 20px 0 8px; color: var(--ink); }
+.ds-h2 { font-weight: 700; margin: 12px 0 4px; }
+.ds-title { font-family: var(--font-title); font-size: 26px; margin: 4px 0; color: var(--ink); }
+.ds-body { margin: 4px 0; font-size: 16px; }
+.ds-swatches { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr; gap: 10px; }
+@media (min-width: 600px) { .ds-swatches { grid-template-columns: 1fr 1fr; } }
+.ds-sw { display: flex; gap: 12px; align-items: center; font-size: 14px; }
+.ds-chip { display: inline-block; flex: none; width: 40px; height: 40px; border-radius: 8px; border: 1px solid var(--border); }
+.ds-chip-sm { width: 22px; height: 22px; border-radius: 50%; }
+.ds-chart-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.ds-icons { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 16px; }
+.ds-icons li { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 13px; }
+.ds-icons svg { width: 28px; height: 28px; color: var(--ink); }
+.ds-avatars { display: flex; flex-wrap: wrap; gap: 16px; }
+.ds-avatar { display: inline-flex; align-items: center; gap: 8px; }
+/* Phones get card lists; wider screens keep the tables */
+.tbl-cards { display: none; }
+@media (max-width: 599px) {
+  .tbl-desktop { display: none; }
+  .tbl-cards { display: block; }
+}
+
+/* Icon-only action buttons (planner, categories) */
+.act-icon { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 40px; height: 40px; border: 1px solid var(--border); border-radius: 50%; background: var(--card); color: var(--ink); cursor: pointer; }
+.act-icon:hover:not(:disabled) { background: var(--mint-soft); }
+.act-icon:disabled { opacity: .45; cursor: not-allowed; }
+.act-icon:focus-visible { outline: 3px solid var(--mint-strong); outline-offset: 2px; }
+
+/* Categories: name field and trash icon on one line */
+.cat-head { font-size: 13px; font-weight: 600; color: var(--muted); padding: 0 0 4px; }
+.cat-row { display: block; }
+.cat-line { display: flex; align-items: center; gap: 8px; width: 100%; }
+.cat-line input { flex: 1; min-width: 0; }
+.cat-row.cat-fresh { background: var(--mint-soft); border-radius: var(--radius); }
+
+/* Modal dialog (planner add and edit) */
+dialog.modal { border: 0; border-radius: 12px; padding: 0; width: min(560px, calc(100vw - 24px)); max-height: 90vh; overflow: auto; background: var(--card); color: var(--ink); box-shadow: 0 12px 40px rgba(14, 59, 43, .25); }
+dialog.modal::backdrop { background: rgba(14, 59, 43, .35); }
+.modal-head { padding: 16px 16px 0; }
+.modal-body { padding: 8px 16px 16px; }
 </style>
 </head>
 <body>
@@ -1260,10 +1328,7 @@ body::before { content: ""; position: fixed; top: 0; left: 0; right: 0; height: 
       <div class="topbar-right">
         <div class="who-menu" id="who-menu"></div>
         <a class="icon-btn" href="#preferences" aria-label="Settings">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="3"></circle>
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-          </svg>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path fill="currentColor" opacity=".3" d="M5.92 7L4.79 9l1.13 2h2.14l1.13-2l-1.13-2zm5.02 9L9.8 18.02L10.92 20h2.16l1.12-1.98L13.06 16zm2.12-2l1.13-2l-1.13-2h-2.12l-1.13 2l1.13 2zm-7.14-1l-1.13 2l1.13 2h2.14l1.13-2l-1.13-2zm10.02-6l-1.13 2l1.13 2h2.14l1.13-2l-1.13-2zm-5.02-3L9.8 5.98L10.94 8h2.12l1.14-2.02L13.08 4zm5.02 9l-1.13 2l1.13 2h2.14l1.13-2l-1.13-2z"/><path fill="currentColor" d="m21.5 9l-2.25-4h-3.31l-1.69-3h-4.5L8.06 5H4.75L2.5 9l1.69 3l-1.69 3l2.25 4h3.31l1.69 3h4.5l1.69-3h3.31l2.25-4l-1.69-3zM8.06 17H5.92L4.8 15l1.12-2h2.14l1.12 2zm0-6H5.92L4.79 9l1.12-2h2.14l1.12 2zm5.02 9h-2.16L9.8 18.02L10.94 16h2.12l1.13 2.02zm-3.27-8l1.12-2h2.12l1.12 2l-1.12 2h-2.12zm3.25-4h-2.12L9.8 5.98L10.92 4h2.16l1.12 1.98zm5.02 9h-2.14l-1.12-2l1.12-2h2.14l1.12 2zm0-6h-2.14l-1.12-2l1.12-2h2.14l1.12 2z"/></svg>
         </a>
       </div>
     </header>
