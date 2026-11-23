@@ -70,6 +70,7 @@
     const t = String(text || '').toLowerCase();
     if (/\b(buy|bought|purchase|reinvest)/.test(t)) return 'Buy';
     if (/\b(sell|sold|redemption)/.test(t)) return 'Sell';
+    if (/\b(withdraw|transfer out)/.test(t)) return 'Withdrawal';
     if (/dividend|distribution|interest|\bdiv\b/.test(t)) return 'Dividend';
     if (/contribution|deposit|transfer in|payroll/.test(t)) return 'Contribution';
     return '';

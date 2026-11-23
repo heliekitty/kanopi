@@ -22,7 +22,7 @@
 
   const DB_NAME = 'kanopi';
   const DB_VERSION = 1;
-  const KINDS = ['member', 'account', 'holding', 'ptx', 'expense', 'bill', 'budget', 'category', 'rule', 'plan', 'tgroup', 'hlabel', 'pgroup', 'quote', 'psheet', 'gorder', 'fmt'];
+  const KINDS = ['member', 'account', 'holding', 'ptx', 'expense', 'bill', 'budget', 'category', 'rule', 'plan', 'tgroup', 'hlabel', 'pgroup', 'quote', 'psheet', 'hist', 'gorder', 'fmt'];
   const DATA_KINDS = KINDS.filter((k) => k !== 'member');
   const MAX_RECORDS = 50000;
   const MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -174,6 +174,8 @@
         return { ...base, account: str(r.account, 64), ticker: str(r.ticker, 16), name: str(r.name), type: str(r.type, 40), shares: num(r.shares), price: num(r.price), cost: r.cost === null || r.cost === undefined || r.cost === '' ? null : num(r.cost), acquired: dateStr(r.acquired) };
       case 'quote':
         return { ...base, ticker: str(r.ticker, 16), price: num(r.price), asOf: num(r.asOf), type: str(r.type, 40), ytdBase: num(r.ytdBase), yearAgo: num(r.yearAgo) };
+      case 'hist':
+        return { ...base, ticker: str(r.ticker, 16), rows: Array.isArray(r.rows) ? r.rows.filter((p) => Array.isArray(p) && Number.isFinite(+p[0]) && +p[1] > 0).map((p) => [+p[0], +p[1]]).slice(0, 5000) : [] };
       case 'psheet':
         return { ...base, sheetId: str(r.sheetId, 120), priceTab: str(r.priceTab, 40), refreshedAt: num(r.refreshedAt) };
       case 'pgroup':
@@ -389,7 +391,7 @@
       });
 
     const liveBenchmarks = {};
-    ['SPY', 'DIA', 'QQQ', 'IWM'].forEach((t) => {
+    ['SPY', 'DIA', 'QQQ', 'IWM', 'IJH'].forEach((t) => {
       const q = quotes[t];
       if (!q) return;
       liveBenchmarks[t] = {
@@ -398,6 +400,8 @@
         oneYear: q.yearAgo > 0 ? q.price / q.yearAgo - 1 : null
       };
     });
+    const priceHistory = {};
+    of('hist').forEach((h) => { if (h.ticker && h.rows.length) priceHistory[h.ticker.toUpperCase()] = h.rows; });
     const psheetRec = of('psheet')[0];
     const psheet = psheetRec ? { sheetId: psheetRec.sheetId, priceTab: psheetRec.priceTab, refreshedAt: psheetRec.refreshedAt } : null;
 
@@ -506,6 +510,7 @@
       ownerLabels: {},
       holdings,
       liveBenchmarks,
+      priceHistory,
       psheet,
       transactions,
       periods: sample.periods,

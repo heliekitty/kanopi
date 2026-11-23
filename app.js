@@ -798,10 +798,11 @@
     });
   }
 
-  const GROUP_OPTIONS = [['none', 'No grouping'], ['asset', 'Asset type'], ['acct', 'Account type'], ['member', 'Family member'], ['custom', 'My groups']];
+  const GROUP_OPTIONS = [['none', 'No grouping'], ['asset', 'Asset type'], ['acct', 'Account type'], ['broker', 'Broker'], ['member', 'Family member'], ['custom', 'My groups']];
   function groupKeyOf(h) {
     if (holdGroup === 'asset') return h.type || 'Other';
     if (holdGroup === 'acct') return clsLabel(D.accounts[h.account].cls);
+    if (holdGroup === 'broker') return D.accounts[h.account].broker || 'No broker';
     if (holdGroup === 'member') return ownerLabel(h.owner);
     if (holdGroup === 'custom') return (D.pgroups || {})[`${h.account}|${h.ticker}`] || (D.tgroups || {})[h.ticker] || 'Ungrouped';
     return '';
@@ -954,6 +955,7 @@
               <select id="hold-group" data-hold-group>${GROUP_OPTIONS.map(([v, l]) => `<option value="${v}"${v === holdGroup ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
             ${holdGroup === 'custom' ? `<div class="btn-row"><button type="button" class="seg plain" data-hold-sort="my" aria-pressed="${holdSort.key === 'my'}">My order</button></div>` : ''}
             <div class="btn-row"><button type="button" class="btn" data-open-groups aria-expanded="${groupsPanel}">Edit my groups</button></div>
+            ${isSample() ? '' : '<div class="btn-row"><button type="button" class="btn" data-hold-add>Add holding</button></div>'}
           </div>
           ${holdNote ? `<p class="tool-note" role="status">${esc(holdNote)}</p>` : ''}
           ${groupsForm}
@@ -1146,10 +1148,10 @@
     return card('closed-title', 'Closed positions', `
       ${years.length > 1 ? toggles('cyear', String(yr), years.map((y) => [String(y), String(y)]), 'Year') : ''}
       <p class="muted">Gains and losses on shares sold in ${yr}. Oldest shares are sold first.</p>
-      ${table('Closed positions by term', [{ t: 'Term' }, { t: 'Proceeds', num: true }, { t: 'Cost', num: true }, { t: 'Gain / loss', num: true }], sumRows)}
+      ${table('Closed positions by term', [{ t: 'Term' }, { t: 'Proceeds', num: true }, { t: 'Cost', num: true }, { t: 'Gain / loss', num: true }], sumRows, false, true)}
       ${S.disallowed > 0 ? `<p class="muted">${washBadge} Not counted above: ${money.format(S.disallowed)} of losses disallowed by wash sales.</p>` : ''}
       ${S.unknown > 0 ? `<p class="muted">${S.unknown} ${S.unknown === 1 ? 'sale has' : 'sales have'} no cost on file and ${S.unknown === 1 ? 'is' : 'are'} left out.</p>` : ''}
-      ${detail.length ? `<h3 class="sub-label">Sales in ${yr}</h3><div class="lot-scroll${detail.length > 15 ? ' scroll' : ''}"${detail.length > 15 ? ' tabindex="0" role="region" aria-label="Sales, scrollable"' : ''}>${table(`Sales in ${yr}`, [{ t: 'Sold' }, { t: 'Holding' }, { t: 'Account' }, { t: 'Shares', num: true }, { t: 'Proceeds', num: true }, { t: 'Cost', num: true }, { t: 'Gain / loss', num: true }, { t: 'Term' }], detail)}</div>` : `<p class="muted">No sales in ${yr}.</p>`}
+      ${detail.length ? `<h3 class="sub-label">Sales in ${yr}</h3><div class="lot-scroll${detail.length > 15 ? ' scroll' : ''}"${detail.length > 15 ? ' tabindex="0" role="region" aria-label="Sales, scrollable"' : ''}>${table(`Sales in ${yr}`, [{ t: 'Sold' }, { t: 'Holding' }, { t: 'Account' }, { t: 'Shares', num: true }, { t: 'Proceeds', num: true }, { t: 'Cost', num: true }, { t: 'Gain / loss', num: true }, { t: 'Term' }], detail, false, true)}</div>` : `<p class="muted">No sales in ${yr}.</p>`}
       <p class="muted">Includes sales inside retirement accounts, which are not taxed there. Wash sales are checked only for losses in personal accounts, but a buy in any account of the household counts as the repurchase.</p>`, 'wide');
   }
 
@@ -1158,7 +1160,7 @@
       return `
         ${pageTop(subnav(PORTFOLIO_LINKS, 'portfolio-performance'))}
         <div class="stack">
-          ${card('perf-title', 'Returns', '<p class="muted">No holdings yet, so there are no returns to show.</p>', 'wide')}
+          ${returnsCard()}
           ${benchCard()}
           ${closedCard()}
         </div>`;
@@ -2893,7 +2895,7 @@
   function priceNoteFor(ticker) {
     const h = D.holdings.find((x) => x.ticker === ticker);
     if (!h) return '';
-    if (h.priceSource !== 'sheet') return ' <span class="cell-sub">from import</span>';
+    if (h.priceSource !== 'sheet') return ' <span class="cell-sub">not in sheet</span>';
     if (!h.priceAsOf) return '';
     return ` <span class="cell-sub">${h.priceStale ? 'stale, ' : ''}as of ${esc(formatDate(new Date(h.priceAsOf)))}</span>`;
   }
@@ -2958,11 +2960,75 @@
       });
       if (rec) list.push(rec);
     });
+    const priceCount = list.length;
+    // Price history for every holding (including sold positions) and the benchmarks, one tab per ticker.
+    const histTickers = Array.from(new Set(D.holdings.map((h) => h.ticker)
+      .concat(D.transactions.map((t) => t.ticker).filter(Boolean))
+      .concat(RET_BENCH)
+      .map((t) => String(t).toUpperCase())
+      .filter((t) => t && t !== 'CASH' && /^[A-Z0-9.\-]{1,16}$/.test(t))));
+    const histResults = await Promise.allSettled(histTickers.map((t) => fetchHistory(id, t)));
+    let histOk = 0;
+    histResults.forEach((res, i) => {
+      if (res.status !== 'fulfilled' || !res.value.length) return;
+      const t = histTickers[i];
+      const rec = Store.clean({ id: `hist-${t.replace(/[^A-Z0-9]/g, '')}`, kind: 'hist', ticker: t, rows: res.value, updatedAt: now });
+      if (rec) { list.push(rec); histOk += 1; }
+    });
     const ps = Store.clean({ id: 'psheet', kind: 'psheet', sheetId: id, priceTab: tab, refreshedAt: now, updatedAt: now });
     writeRecords(list.concat([ps]));
     refreshData();
-    priceMsg = `Updated ${list.length} price${list.length === 1 ? '' : 's'}.`;
+    priceMsg = `Updated ${priceCount} price${priceCount === 1 ? '' : 's'} and ${histOk} of ${histTickers.length} price histories${histOk < histTickers.length ? ' (missing tabs are left out of returns)' : ''}.`;
     route({ keepPlace: true, focus: '#price-sheet' });
+  }
+
+  const RET_BENCH = ['SPY', 'DIA', 'QQQ', 'IWM', 'IJH'];
+
+  // Day keys for history rows: YYYY-MM-DD is read as a local date, anything else is parsed then reduced to its day.
+  function parseHistDay(s) {
+    const text = String(s || '').trim();
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+    if (m) return new Date(+m[1], +m[2] - 1, +m[3]).getTime();
+    const ms = Date.parse(text);
+    return Number.isFinite(ms) ? KanopiReturns.dayKey(ms) : NaN;
+  }
+
+  // One ticker's history tab: Date and Close columns, one row per trading day.
+  async function fetchHistory(id, ticker) {
+    const res = await fetch(`https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(ticker)}`, { cache: 'no-store' });
+    if (!res.ok) throw new Error(String(res.status));
+    const parsed = KanopiImporter.parseCsv(await res.text());
+    if (parsed.error || !parsed.rows.length) throw new Error('no table');
+    const header = parsed.rows[0].map((c) => String(c).trim().toLowerCase());
+    const iD = header.indexOf('date'); const iC = header.indexOf('close');
+    if (iD < 0 || iC < 0) throw new Error('columns');
+    const byDay = new Map();
+    parsed.rows.slice(1).forEach((r) => {
+      const k = parseHistDay(r[iD]);
+      const px = KanopiSheets.parseAmount(r[iC]);
+      if (Number.isFinite(k) && px !== null && px > 0) byDay.set(k, px);
+    });
+    return Array.from(byDay.entries()).sort((a, b) => a[0] - b[0]);
+  }
+
+  function returnsCard() {
+    const hist = D.priceHistory || {};
+    if (!Object.keys(hist).length) {
+      return card('perf-title', 'Returns', '<p class="muted">Add your price sheet under Settings > Prices to see returns. Each holding and benchmark needs its own history tab in the sheet.</p>', 'wide');
+    }
+    const r = KanopiReturns.compute({ holdings: D.holdings, transactions: D.transactions, history: hist });
+    if (!r.ok) return card('perf-title', 'Returns', '<p class="muted">No price history yet.</p>', 'wide');
+    const pct = (v) => (v == null ? '—' : signedPctText(v * 100));
+    const head = [{ t: 'Period' }, { t: 'Portfolio', num: true }].concat(KanopiReturns.BENCH.map((t) => ({ t, num: true })));
+    const rows = r.periods.map((p) => [
+      esc(p.key === 'since' ? `Since ${formatDate(new Date(p.from))}` : p.label),
+      pct(p.portfolio),
+      ...KanopiReturns.BENCH.map((t) => pct(p.bench[t]))
+    ]);
+    const body = table('Returns', head, rows, false, true)
+      + `<p class="muted">Through ${esc(formatDate(new Date(r.end)))}. All accounts, holdings only. Portfolio is time-weighted, so deposits and withdrawals do not move it. Benchmarks are price returns, so dividends are not included.</p>`
+      + r.notes.map((n) => `<p class="muted">${esc(n)}</p>`).join('');
+    return card('perf-title', 'Returns', body, 'wide');
   }
 
   function benchCard() {
@@ -2972,7 +3038,7 @@
     const pct = (v) => (v == null ? '—' : signedPctText(v * 100));
     const head = [{ t: 'Benchmark' }, { t: 'Price', num: true }, { t: 'Year to date', num: true }, { t: '1 year', num: true }, { t: 'As of' }];
     const rows = keys.map((k) => [esc(k), money2.format(b[k].price), pct(b[k].ytd), pct(b[k].oneYear), b[k].asOf ? esc(formatDate(new Date(b[k].asOf))) : '—']);
-    return card('bench-title', 'Benchmarks', table('Benchmarks', head, rows) + '<p class="muted">Price returns from your price sheet. Dividends are not included.</p>', 'wide');
+    return card('bench-title', 'Benchmarks', table('Benchmarks', head, rows, false, true) + '<p class="muted">Price returns from your price sheet. Dividends are not included.</p>', 'wide');
   }
 
   function dataCard() {
@@ -3423,6 +3489,99 @@
     openLots(ticker);
   }
 
+  // ---- Add a holding by hand
+
+  let holdAdd = null;
+
+  function openHoldAdd() {
+    if (!lotDialog) return;
+    holdAdd = { account: '', ticker: '', name: '', type: '', shares: '', price: '', cost: '', acquired: '', error: '' };
+    renderHoldAdd();
+    if (!lotDialog.open) lotDialog.showModal();
+    const first = lotDialog.querySelector('#ha-account');
+    if (first) first.focus({ preventScroll: true });
+  }
+
+  function renderHoldAdd() {
+    const d = holdAdd;
+    const types = Array.from(new Set(D.holdings.map((x) => x.type).filter(Boolean)));
+    const accts = Object.keys(D.accounts).sort((a, b) => D.accounts[a].name.localeCompare(D.accounts[b].name));
+    lotDialog.innerHTML = `
+      <div class="dlg-body">
+        <div class="dlg-head">
+          <div><h2 id="lot-title" class="dlg-title">Add holding</h2><p class="muted">Price is replaced by the price sheet when the sheet has this ticker.</p></div>
+          <button type="button" class="btn" data-hold-add-cancel>Cancel</button>
+        </div>
+        <form class="member-form" data-hold-add-form novalidate>
+          <div class="field"><label for="ha-account">Account</label>
+            <select id="ha-account" data-ha-field="account"><option value="">Choose an account</option>${accts.map((a) => `<option value="${esc(a)}"${a === d.account ? ' selected' : ''}>${esc(D.accounts[a].name)}${D.accounts[a].broker ? ` (${esc(D.accounts[a].broker)})` : ''}</option>`).join('')}</select></div>
+          <div class="field-row">
+            <div class="field"><label for="ha-ticker">Ticker</label>
+              <input id="ha-ticker" type="text" maxlength="16" autocomplete="off" data-ha-field="ticker" value="${esc(d.ticker)}"></div>
+            <div class="field"><label for="ha-name">Name</label>
+              <input id="ha-name" type="text" maxlength="80" autocomplete="off" data-ha-field="name" value="${esc(d.name)}"></div>
+          </div>
+          <div class="field"><label for="ha-type">Type (optional)</label>
+            <input id="ha-type" type="text" maxlength="40" autocomplete="off" list="hold-types" data-ha-field="type" value="${esc(d.type)}">
+            <datalist id="hold-types">${types.map((t) => `<option value="${esc(t)}"></option>`).join('')}</datalist></div>
+          <div class="field-row">
+            <div class="field"><label for="ha-shares">Shares</label>
+              <input id="ha-shares" type="text" inputmode="decimal" autocomplete="off" data-ha-field="shares" value="${esc(d.shares)}"></div>
+            <div class="field"><label for="ha-price">Price</label>
+              <input id="ha-price" type="text" inputmode="decimal" autocomplete="off" data-ha-field="price" value="${esc(d.price)}"></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label for="ha-cost">Total cost (optional)</label>
+              <input id="ha-cost" type="text" inputmode="decimal" autocomplete="off" data-ha-field="cost" value="${esc(d.cost)}"></div>
+            <div class="field"><label for="ha-acquired">Acquired (optional)</label>
+              <input id="ha-acquired" type="date" data-ha-field="acquired" value="${esc(d.acquired)}"></div>
+          </div>
+          ${d.error ? `<p class="form-error" role="alert">${esc(d.error)}</p>` : ''}
+          <div class="btn-row"><button type="submit" class="btn btn-primary">Add holding</button></div>
+        </form>
+      </div>`;
+  }
+
+  function saveHoldAdd(form) {
+    const d = holdAdd;
+    if (!d) return;
+    const val = (k) => form.querySelector(`[data-ha-field="${k}"]`).value;
+    d.account = val('account'); d.ticker = val('ticker').trim().toUpperCase(); d.name = val('name').trim().replace(/\s+/g, ' ').slice(0, 80);
+    d.type = val('type').trim().slice(0, 40); d.shares = val('shares'); d.price = val('price'); d.cost = val('cost'); d.acquired = val('acquired');
+    const shares = KanopiSheets.parseAmount(d.shares);
+    const price = KanopiSheets.parseAmount(d.price);
+    const costText = d.cost.trim();
+    const cost = costText === '' ? null : KanopiSheets.parseAmount(costText);
+    if (!D.accounts[d.account]) d.error = 'Choose an account.';
+    else if (!/^[A-Z0-9.\-]{1,16}$/.test(d.ticker)) d.error = 'Enter a ticker, such as VTI.';
+    else if (!d.name) d.error = 'Enter a name.';
+    else if (shares === null || !(shares > 0)) d.error = 'Enter the number of shares.';
+    else if (price === null || !(price >= 0)) d.error = 'Enter the price.';
+    else if (costText !== '' && (cost === null || cost < 0)) d.error = 'Enter a valid total cost, or leave it blank.';
+    else if (d.acquired && !/^\d{4}-\d{2}-\d{2}$/.test(d.acquired)) d.error = 'Enter the acquired date.';
+    else d.error = '';
+    if (d.error) { renderHoldAdd(); return; }
+    const existing = D.holdings.find((x) => x.account === d.account && x.ticker === d.ticker);
+    if (existing) {
+      const acctName = D.accounts[d.account].name;
+      holdAdd = null;
+      holdEdit = { account: d.account, ticker: d.ticker, name: existing.name || '', type: existing.type || '', shares: String(existing.shares), price: String(existing.price), cost: existing.cost == null ? '' : String(existing.cost), error: `${d.ticker} is already in ${acctName}. Edit it here instead.` };
+      renderHoldEdit();
+      return;
+    }
+    const rec = Store.clean({
+      id: `h-${KanopiSheets.hashText(`${d.account}|${d.ticker}`)}`, kind: 'holding', account: d.account, ticker: d.ticker,
+      name: d.name, type: d.type || 'Other', shares, price, cost, acquired: d.acquired || '', updatedAt: Date.now()
+    });
+    writeRecords([rec]);
+    refreshData();
+    const ticker = d.ticker;
+    holdAdd = null;
+    lotDialog.close();
+    route({ keepPlace: true });
+    openLots(ticker);
+  }
+
   function openLots(ticker) {
     if (!lotDialog || typeof lotDialog.showModal !== 'function') return;
     const html = lotsDialog(ticker);
@@ -3436,11 +3595,13 @@
   if (lotDialog) {
     lotDialog.addEventListener('submit', (e) => {
       if (e.target.matches('[data-hold-form]')) { e.preventDefault(); saveHolding(e.target); }
+      else if (e.target.matches('[data-hold-add-form]')) { e.preventDefault(); saveHoldAdd(e.target); }
       else if (e.target.matches('[data-pgroup-form]')) { e.preventDefault(); savePosGroup(e.target); }
     });
     lotDialog.addEventListener('click', (e) => {
       const edit = e.target.closest('[data-hold-edit]');
       if (edit) { openHoldEdit(edit.dataset.holdAccount, edit.dataset.holdTicker); return; }
+      if (e.target.closest('[data-hold-add-cancel]')) { holdAdd = null; lotDialog.close(); return; }
       if (e.target.closest('[data-hold-cancel]') && holdEdit) { const t = holdEdit.ticker; holdEdit = null; lotDialog.close(); openLots(t); }
     });
     lotDialog.addEventListener('click', (e) => { if (e.target === lotDialog || e.target.closest('[data-close-lots]')) lotDialog.close(); });
@@ -3518,6 +3679,7 @@
     if (t.closest('[data-restore-apply]')) { applyRestore(); return; }
     const histBtn = t.closest('[data-history]');
     if (histBtn) { historyView = histBtn.dataset.history === 'yoy' ? 'yoy' : 'quarters'; route({ keepPlace: true, focus: `[data-history="${historyView}"]` }); return; }
+    if (t.closest('[data-hold-add]')) { openHoldAdd(); return; }
     const actSortBtn = t.closest('[data-act-sort]');
     if (actSortBtn) {
       const k = actSortBtn.dataset.actSort;

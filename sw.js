@@ -21,6 +21,7 @@ const SHELL = [
   'sheets.js',
   'portfolio.js',
   'importer.js',
+  'returns.js',
   'manifest.webmanifest',
   'icons/apple-touch-icon.png',
   'icons/apple-touch-icon-dark.png',

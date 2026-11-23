@@ -3,6 +3,15 @@
 Versions follow MAJOR.MINOR.PATCH. The current version lives in `version.js`.
 Each deployment gets a line here, newest first.
 
+## 1.3.0 - 2026-11-23
+
+- Performance > Returns: time-weighted portfolio returns for 1 day, 1 month, year to date, 1 year, and since start, compared with SPY, DIA, QQQ, IWM, and IJH. Contributions and withdrawals do not change the portfolio return. Holdings only, all accounts.
+- Returns use daily history. Each holding and benchmark needs its own tab in your price sheet, named by ticker, with Date and Close columns. Refresh prices to load them. Missing tabs are noted on the card.
+- A buy larger than the cash on hand is treated as money deposited on the buy date, so it does not show as a loss.
+- Activity import recognizes Withdrawal and "transfer out".
+- Holdings and Closed positions: the first column stays pinned when scrolling sideways on phones.
+- Holdings: add a holding manually. Group holdings by broker. Long names wrap to two lines.
+
 ## 1.2.0 - 2026-11-23
 
 - Settings > Data > Prices: connect your Google price sheet (link or ID and tab name), then Save and refresh prices. The sheet needs Ticker and Price columns. TradeTime, Type, YTD Base and 1Y Base are optional.
