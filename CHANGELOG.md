@@ -3,6 +3,11 @@
 Versions follow MAJOR.MINOR.PATCH. The current version lives in `version.js`.
 Each deployment gets a line here, newest first.
 
+## 1.7.0 - 2026-11-23
+
+- Portfolio > Composition: the portfolio value is hidden behind the same pile of leaves. Tap to show it, and it hides again when you leave the page.
+- Budget > Learned stores: renaming a keyword fills in the category on past transactions that have none. Categorized transactions are not changed.
+
 ## 1.6.0 - 2026-11-23
 
 - Home > Net worth: includes the value of your portfolio holdings, and subtracts this month's spending. The "After this month's expenses" line is removed. The tree is removed.

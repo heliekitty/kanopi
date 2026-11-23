@@ -647,6 +647,7 @@
 
   // Net worth stays hidden behind a pile of leaves until tapped. It hides again when you leave the page.
   let nwRevealed = false;
+  let pvRevealed = false;
 
   // A small pile of leaves, shown in place of the net worth amount.
   const NW_PILE = `<svg class="nw-pile-art" viewBox="0 0 80 44" aria-hidden="true" focusable="false">
@@ -786,7 +787,7 @@
       <div class="stack">
         <section class="card wide" aria-labelledby="pv-title">
           <h2 id="pv-title" class="card-label">Portfolio value</h2>
-          <p class="big">${money.format(total)}</p>
+          <button type="button" class="nw-toggle" data-pv-toggle aria-expanded="${pvRevealed}" aria-label="${pvRevealed ? 'Hide portfolio value' : 'Show portfolio value'}">${pvRevealed ? `<span class="big">${money.format(total)}</span>` : NW_PILE}</button>
           <p class="muted">${hs.length} holdings across ${new Set(hs.map((h) => h.account)).size} ${new Set(hs.map((h) => h.account)).size === 1 ? 'account' : 'accounts'}. ${esc(priceNote())}</p>
         </section>
         ${card('comp-title', `Composition by ${titleBy}`,
@@ -2687,7 +2688,7 @@
   let ruleEditing = null; // keyword being renamed
   let ruleError = '';
 
-  // Renames a keyword. The category stays, and past transactions are not changed.
+  // Renames a keyword. The category stays. Past transactions with no category take it; categorized ones are not changed.
   function saveRuleEdit(oldKey, raw) {
     const next = Store.vendorKey(raw);
     if (!next) ruleError = 'Enter a store name or keyword.';
@@ -2696,11 +2697,14 @@
     if (ruleError) { route({ keepPlace: true, focus: '#rule-name-input' }); return; }
     if (next !== oldKey) {
       const cat = D.rules[oldKey];
+      // Past transactions with no category take the category; anything already categorized is left alone.
+      const fills = cat ? fillPastBlanks(next, cat) : [];
       if (isSample()) { delete D.rules[oldKey]; D.rules[next] = cat; }
       else {
         writeRecords([
           { id: Store.ruleId(oldKey), kind: 'rule', updatedAt: Date.now(), deleted: true },
-          { id: Store.ruleId(next), kind: 'rule', updatedAt: Date.now(), vendor: next, cat }
+          { id: Store.ruleId(next), kind: 'rule', updatedAt: Date.now(), vendor: next, cat },
+          ...fills
         ]);
         refreshData();
       }
@@ -4008,7 +4012,7 @@
     if (!booted) return; // wait for stored data to load (init below)
     const keepPlace = !!(opts && opts.keepPlace);
     if (!keepPlace && lotDialog && lotDialog.open) lotDialog.close();
-    if (!keepPlace) { txModal = null; familyPanel = false; ruleEditing = null; ruleError = ''; closeTrip(); nwRevealed = false; }
+    if (!keepPlace) { txModal = null; familyPanel = false; ruleEditing = null; ruleError = ''; closeTrip(); nwRevealed = false; pvRevealed = false; }
     let requested = location.hash.replace('#', '') || 'home';
     if (requested === 'budget-expenses') requested = 'budget-transactions';
     if (requested === 'portfolio-transactions') { requested = 'portfolio-activity'; history.replaceState(null, '', '#portfolio-activity'); }
@@ -4122,6 +4126,7 @@
     const txYes = t.closest('[data-tx-delete-yes]');
     if (txYes) { txModal = null; deleteTx(txYes.dataset.txDeleteYes); route({ keepPlace: true, focus: '[data-open-tx]' }); return; }
     if (t.closest('[data-nw-toggle]')) { nwRevealed = !nwRevealed; route({ keepPlace: true, focus: '[data-nw-toggle]' }); return; }
+    if (t.closest('[data-pv-toggle]')) { pvRevealed = !pvRevealed; route({ keepPlace: true, focus: '[data-pv-toggle]' }); return; }
     if (t.closest('[data-open-trip]')) { openTrip(); route({ keepPlace: true, focus: '#trip-name' }); return; }
     if (t.closest('[data-trip-cancel]')) { closeTrip(); route({ keepPlace: true, focus: '[data-open-trip]' }); return; }
     if (t.closest('[data-open-plan]')) { openPlan(null); route({ keepPlace: true, focus: '#plan-name' }); return; }
