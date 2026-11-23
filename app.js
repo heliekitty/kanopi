@@ -405,7 +405,8 @@
     return `<ul class="tx-list tbl-cards" aria-label="${esc(caption)}">${items}</ul>`;
   }
 
-  function table(caption, head, rows, cards) {
+  // keep: on phones, keep the table layout and scroll sideways with the first column pinned.
+  function table(caption, head, rows, cards, keep) {
     const th = head.map((h) => `<th scope="col"${h.num ? ' class="num"' : ''}${h.aria ? ` aria-sort="${h.aria}"` : ''}>${h.html || esc(h.t)}</th>`).join('');
     const body = rows.map((r) => {
       const cells = Array.isArray(r) ? r : r.cells;
@@ -421,7 +422,7 @@
       }).join('')}</tr>`;
     }).join('');
     const tableHtml = `
-      <div class="tbl-wrap${cards ? ' tbl-desktop' : ''}">
+      <div class="tbl-wrap${cards ? ' tbl-desktop' : ''}${keep ? ' tbl-keep' : ''}">
         <table class="tbl">
           <caption class="sr-only">${esc(caption)}</caption>
           <thead><tr>${th}</tr></thead>
@@ -802,7 +803,7 @@
     if (holdGroup === 'asset') return h.type || 'Other';
     if (holdGroup === 'acct') return clsLabel(D.accounts[h.account].cls);
     if (holdGroup === 'member') return ownerLabel(h.owner);
-    if (holdGroup === 'custom') return (D.tgroups || {})[h.ticker] || 'Ungrouped';
+    if (holdGroup === 'custom') return (D.pgroups || {})[`${h.account}|${h.ticker}`] || (D.tgroups || {})[h.ticker] || 'Ungrouped';
     return '';
   }
 
@@ -839,7 +840,7 @@
 
   // Group names in the order you chose; groups not yet placed come last, A to Z.
   function groupNames() {
-    const live = Array.from(new Set(Object.keys(D.tgroups || {}).map((k) => D.tgroups[k])));
+    const live = Array.from(new Set(Object.keys(D.tgroups || {}).map((k) => D.tgroups[k]).concat(Object.keys(D.pgroups || {}).map((k) => D.pgroups[k]))));
     const placed = (D.gorder || []).filter((n) => live.indexOf(n) !== -1);
     return placed.concat(live.filter((n) => placed.indexOf(n) === -1).sort());
   }
@@ -956,7 +957,7 @@
           </div>
           ${holdNote ? `<p class="tool-note" role="status">${esc(holdNote)}</p>` : ''}
           ${groupsForm}
-          ${table('Holdings in view', head, rows)}
+          ${table('Holdings in view', head, rows, false, true)}
           ${splitKey}
           <p class="muted">Select a holding to see its lots. Cash, and any holding without a known cost, is left out of cost and gain totals. ${esc(priceNote())}</p>
           ${L.problems.length ? `<ul class="plain-list">${L.problems.map((p) => `<li class="muted">${esc(p)}</li>`).join('')}</ul>` : ''}`, 'wide')}
@@ -1022,6 +1023,10 @@
         <details class="lot-acc" open>
           <summary><span>${esc(acct.name)}</span><span class="muted">${esc(clsLabel(acct.cls))}${acct.broker ? ` · ${esc(acct.broker)}${esc(detail)}` : ''} · ${h.shares.toLocaleString('en-US')} shares · ${esc(gain == null ? 'gain unknown' : signedMoney(gain))}</span></summary>
           <div class="btn-row"><button type="button" class="btn" data-hold-edit data-hold-account="${esc(h.account)}" data-hold-ticker="${esc(h.ticker)}">Edit holding</button></div>
+          <form class="btn-row" data-pgroup-form data-pgroup-account="${esc(h.account)}" data-pgroup-ticker="${esc(h.ticker)}">
+            <input type="text" maxlength="30" list="pgroup-names" autocomplete="off" data-pgroup-input aria-label="Group for ${esc(ticker)} in ${esc(acct.name)}" value="${esc((D.pgroups || {})[`${h.account}|${h.ticker}`] || '')}" placeholder="${esc((D.tgroups || {})[ticker] || 'Ungrouped')}">
+            <button type="submit" class="btn">Save group</button>
+          </form>
           <div class="lot-scroll${rows.length > 15 ? ' scroll' : ''}"${rows.length > 15 ? ' tabindex="0" role="region" aria-label="Lots, scrollable"' : ''}>
             ${table(`Lots of ${ticker} in ${acct.name}`, [{ t: 'Acquired' }, { t: 'Shares', num: true }, { t: 'Cost / share', num: true }, { t: 'Cost', num: true }, { t: 'Value', num: true }, { t: 'Gain / loss', num: true }, { t: 'Term' }], rows)}
           </div>
@@ -1036,6 +1041,7 @@
         <p class="row"><span>Shares · price</span><span>${pos.shares.toLocaleString('en-US')} · ${money2.format(pos.price)}</span></p>
         <p class="row"><span>Average cost · total cost</span><span>${pos.avg == null ? '—' : money2.format(pos.avg)} · ${pos.cost == null ? '—' : money.format(pos.cost)}</span></p>
         <p class="row"><span>Value · gain / loss</span><span>${money.format(pos.value)} · ${esc(gainText(pos.gain, pos.gainPct))}</span></p>
+        <datalist id="pgroup-names">${groupNames().map((n) => `<option value="${esc(n)}"></option>`).join('')}</datalist>
         ${sections}
         <p class="muted">Short-term means held 1 year or less. Long-term means held more than 1 year. Newest lots first.</p>
         ${anyWash ? `<p class="muted">${washBadge} Wash sale: you sold this holding at a loss within 30 days of buying it. The loss is added to this lot's cost, and its holding period carries over.</p>` : ''}
@@ -1044,30 +1050,72 @@
 
   // ---- Activity (trades, dividends, contributions)
 
-  function renderActivity() {
-    const txs = D.transactions
-      .filter((t) => inView(D.accounts[t.account].owner))
-      .map((t) => ({ ...t, date: dateFromDaysAgo(t.daysAgo) }))
-      .sort((a, b) => b.date - a.date);
+  // Recent activity: filters and sorting. Column headers sort on wide screens; the Sort by menu does it on phones.
+  let actFilter = { type: '', account: '', range: 'all' };
+  let actSort = { key: 'date', dir: 'desc' };
+  const ACT_SORTS = [['date', 'desc', 'Newest first'], ['date', 'asc', 'Oldest first'], ['amount', 'desc', 'Largest amount'], ['amount', 'asc', 'Smallest amount'], ['type', 'asc', 'Type A–Z'], ['type', 'desc', 'Type Z–A'], ['account', 'asc', 'Account A–Z'], ['account', 'desc', 'Account Z–A'], ['detail', 'asc', 'Detail A–Z'], ['detail', 'desc', 'Detail Z–A']];
+  const ACT_RANGES = [['all', 'All dates'], ['30', 'Last 30 days'], ['365', 'Last 12 months'], ['ytd', 'This year']];
 
-    const rows = txs.map((t) => {
-      const detail = t.qty ? `${t.type} ${t.qty} ${t.ticker}` : (t.ticker ? `${t.type} · ${t.ticker}` : t.type);
-      return [
-        esc(formatDate(t.date)),
-        `<span class="pill">${esc(t.type)}</span>`,
-        esc(detail),
-        esc(D.accounts[t.account].name),
-        money.format(t.amount)
-      ];
+  function activityDetail(t) {
+    return t.qty ? `${t.type} ${t.qty} ${t.ticker}` : (t.ticker ? `${t.type} · ${t.ticker}` : t.type);
+  }
+
+  function renderActivity() {
+    const all = D.transactions
+      .filter((t) => inView(D.accounts[t.account].owner))
+      .map((t) => ({ ...t, date: dateFromDaysAgo(t.daysAgo), detail: activityDetail(t), acct: D.accounts[t.account].name }));
+    const types = Array.from(new Set(all.map((t) => t.type))).sort();
+    const accountIds = Array.from(new Set(all.map((t) => t.account))).sort((a, b) => D.accounts[a].name.localeCompare(D.accounts[b].name));
+    const fType = types.indexOf(actFilter.type) !== -1 ? actFilter.type : '';
+    const fAcct = accountIds.indexOf(actFilter.account) !== -1 ? actFilter.account : '';
+    const thisYear = startOfToday().getFullYear();
+    const shown = all.filter((t) => (!fType || t.type === fType) && (!fAcct || t.account === fAcct)
+      && (actFilter.range === 'all' || (actFilter.range === 'ytd' ? t.date.getFullYear() === thisYear : t.daysAgo <= Number(actFilter.range))));
+
+    const val = { date: (t) => t.date.getTime(), amount: (t) => t.amount, type: (t) => t.type, detail: (t) => t.detail, account: (t) => t.acct }[actSort.key];
+    const dir = actSort.dir === 'asc' ? 1 : -1;
+    shown.sort((a, b) => {
+      const x = val(a); const y = val(b);
+      const c = typeof x === 'string' ? x.localeCompare(y) : x - y;
+      return c * dir || (b.date - a.date);
     });
+
+    const arrow = (k) => (actSort.key === k ? (actSort.dir === 'asc' ? ' ▲' : ' ▼') : '');
+    const th = (k, text, num) => ({
+      t: text, num, aria: actSort.key === k ? (actSort.dir === 'asc' ? 'ascending' : 'descending') : 'none',
+      html: `<button type="button" class="sort-btn" data-act-sort="${k}">${esc(text)}<span aria-hidden="true">${arrow(k)}</span></button>`
+    });
+    const head = [th('date', 'Date'), th('type', 'Type'), th('detail', 'Detail'), th('account', 'Account'), th('amount', 'Amount', true)];
+    const rows = shown.map((t) => [
+      esc(formatDate(t.date)),
+      `<span class="pill">${esc(t.type)}</span>`,
+      esc(t.detail),
+      esc(t.acct),
+      money.format(t.amount)
+    ]);
+
+    const sortVal = `${actSort.key}-${actSort.dir}`;
+    const filters = `
+      <div class="filters" role="search" aria-label="Filter and sort activity">
+        <div class="field"><label for="act-type">Type</label>
+          <select id="act-type" data-act-filter="type"><option value="">All types</option>${types.map((t) => `<option value="${esc(t)}"${t === fType ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></div>
+        <div class="field"><label for="act-account">Account</label>
+          <select id="act-account" data-act-filter="account"><option value="">All accounts</option>${accountIds.map((a) => `<option value="${esc(a)}"${a === fAcct ? ' selected' : ''}>${esc(D.accounts[a].name)}</option>`).join('')}</select></div>
+        <div class="field"><label for="act-range">Date</label>
+          <select id="act-range" data-act-filter="range">${ACT_RANGES.map(([v, l]) => `<option value="${v}"${v === actFilter.range ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
+        <div class="field"><label for="act-sort">Sort by</label>
+          <select id="act-sort" data-act-filter="sort">${ACT_SORTS.map(([k, d, l]) => `<option value="${k}-${d}"${k + '-' + d === sortVal ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
+      </div>
+      <p class="muted" role="status">Showing ${shown.length} of ${all.length}</p>`;
 
     return `
       ${pageTop(subnav(PORTFOLIO_LINKS, 'portfolio-activity'))}
       <div class="stack">
         ${card('tx-title', 'Recent activity',
-          (rows.length
-            ? table('Recent activity', [{ t: 'Date' }, { t: 'Type' }, { t: 'Detail' }, { t: 'Account' }, { t: 'Amount', num: true }], rows)
-            : '<p class="muted">No activity in this view.</p>')
+          filters
+          + (rows.length
+            ? table('Recent activity', head, rows)
+            : `<p class="muted">${all.length ? 'No activity matches these filters.' : 'No activity in this view.'}</p>`)
           + '<p class="muted">Trades, dividends and contributions in your investment accounts. Spending is under Budget.</p>', 'wide')}
       </div>`;
   }
@@ -3264,6 +3312,26 @@
     openLots(ticker);
   }
 
+  // Your group for one position (account + ticker). Blank removes it, so the ticker's group applies again.
+  function savePosGroup(form) {
+    const account = form.dataset.pgroupAccount;
+    const ticker = form.dataset.pgroupTicker;
+    const group = form.querySelector('[data-pgroup-input]').value.trim().replace(/\s+/g, ' ').slice(0, 30);
+    const key = `${account}|${ticker}`;
+    if (isSample()) {
+      if (!SAMPLE.pgroups) SAMPLE.pgroups = {};
+      if (group) SAMPLE.pgroups[key] = group; else delete SAMPLE.pgroups[key];
+      D.pgroups = SAMPLE.pgroups;
+    } else {
+      const rec = Store.clean({ id: `pg-${KanopiSheets.hashText(key)}`, kind: 'pgroup', account, ticker, group, updatedAt: Date.now(), deleted: group ? undefined : true });
+      writeRecords([rec]);
+      refreshData();
+    }
+    lotDialog.close();
+    route({ keepPlace: true });
+    openLots(ticker);
+  }
+
   function openLots(ticker) {
     if (!lotDialog || typeof lotDialog.showModal !== 'function') return;
     const html = lotsDialog(ticker);
@@ -3275,7 +3343,10 @@
     if (first) first.focus({ preventScroll: true });
   }
   if (lotDialog) {
-    lotDialog.addEventListener('submit', (e) => { if (e.target.matches('[data-hold-form]')) { e.preventDefault(); saveHolding(e.target); } });
+    lotDialog.addEventListener('submit', (e) => {
+      if (e.target.matches('[data-hold-form]')) { e.preventDefault(); saveHolding(e.target); }
+      else if (e.target.matches('[data-pgroup-form]')) { e.preventDefault(); savePosGroup(e.target); }
+    });
     lotDialog.addEventListener('click', (e) => {
       const edit = e.target.closest('[data-hold-edit]');
       if (edit) { openHoldEdit(edit.dataset.holdAccount, edit.dataset.holdTicker); return; }
@@ -3356,6 +3427,12 @@
     if (t.closest('[data-restore-apply]')) { applyRestore(); return; }
     const histBtn = t.closest('[data-history]');
     if (histBtn) { historyView = histBtn.dataset.history === 'yoy' ? 'yoy' : 'quarters'; route({ keepPlace: true, focus: `[data-history="${historyView}"]` }); return; }
+    const actSortBtn = t.closest('[data-act-sort]');
+    if (actSortBtn) {
+      const k = actSortBtn.dataset.actSort;
+      actSort = actSort.key === k ? { key: k, dir: actSort.dir === 'asc' ? 'desc' : 'asc' } : { key: k, dir: k === 'date' || k === 'amount' ? 'desc' : 'asc' };
+      route({ keepPlace: true, focus: `[data-act-sort="${k}"]` }); return;
+    }
     const sortBtn = t.closest('[data-hold-sort]');
     if (sortBtn) {
       const k = sortBtn.dataset.holdSort;
@@ -3537,6 +3614,12 @@
       return;
     }
     if (el.matches('[data-imp-map]') && imp) { imp.map[el.dataset.impMap] = el.value; return; }
+    if (el.matches('[data-act-filter]')) {
+      const f = el.dataset.actFilter;
+      if (f === 'sort') { const [k, d] = el.value.split('-'); actSort = { key: k, dir: d }; }
+      else actFilter = { ...actFilter, [f]: el.value };
+      route({ keepPlace: true, focus: `#act-${f}` }); return;
+    }
     if (el.matches('[data-hold-group]')) { holdGroup = el.value; if (holdGroup === 'custom' && groupNames().length) holdSort = { key: 'my', dir: 'desc' }; else if (holdSort.key === 'my') holdSort = { key: 'value', dir: 'desc' }; route({ keepPlace: true, focus: '#hold-group' }); return; }
     if (el.matches('[data-acct]') && acctDraft) {
       acctDraft[el.dataset.acct] = el.value;

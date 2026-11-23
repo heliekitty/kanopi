@@ -3,6 +3,13 @@
 Versions follow MAJOR.MINOR.PATCH. The current version lives in `version.js`.
 Each deployment gets a line here, newest first.
 
+## 1.1.7 - 2026-11-22
+
+- Portfolio > Recent activity: filter by type, account, and date (last 30 days, last 12 months, this year). Sort by date, amount, type, account, or detail. Tap a column header to sort on wide screens; use Sort by on phones.
+- Portfolio > Holdings on phones: the table keeps its table layout. Scroll sideways to see the other columns, and the holding name stays pinned on the left.
+- Holdings: set a group for one position from its lot popup (Save group). It overrides the ticker's group for that account only. Leave it blank to use the ticker's group again. Imports keep it.
+- Group by My groups uses the position's group first, then the ticker's group.
+
 ## 1.1.6 - 2026-11-22
 
 - Holding type is now a label you set. Imports no longer overwrite it, even when the file has no Type column. Leave the type blank to use the file's type again.

@@ -10,6 +10,7 @@
 //   gorder   { names: [group names in the order you chose] }   id is always 'gorder'
 //   tgroup   { ticker, group }                                  the named group a ticker belongs to in Holdings
 //   hlabel   { account, ticker, type }                          your own type for a holding; imports never overwrite it
+//   pgroup   { account, ticker, group }                         your group for one position; overrides the ticker's group
 //   ptx      { date, type, ticker, qty, amount, account }      portfolio transaction
 //   expense  { date, name, type, cat, amount, paidBy, owner } type: expense | refund | income | transfer
 //   bill     { name, amount, day, owner }                      day of month, 1 to 28
@@ -19,7 +20,7 @@
 
   const DB_NAME = 'kanopi';
   const DB_VERSION = 1;
-  const KINDS = ['member', 'account', 'holding', 'ptx', 'expense', 'bill', 'budget', 'category', 'rule', 'plan', 'tgroup', 'hlabel', 'gorder', 'fmt'];
+  const KINDS = ['member', 'account', 'holding', 'ptx', 'expense', 'bill', 'budget', 'category', 'rule', 'plan', 'tgroup', 'hlabel', 'pgroup', 'gorder', 'fmt'];
   const DATA_KINDS = KINDS.filter((k) => k !== 'member');
   const MAX_RECORDS = 50000;
   const MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -169,6 +170,8 @@
         return { ...base, ticker: str(r.ticker, 16), group: str(r.group, 30) };
       case 'holding':
         return { ...base, account: str(r.account, 64), ticker: str(r.ticker, 16), name: str(r.name), type: str(r.type, 40), shares: num(r.shares), price: num(r.price), cost: r.cost === null || r.cost === undefined || r.cost === '' ? null : num(r.cost), acquired: dateStr(r.acquired) };
+      case 'pgroup':
+        return { ...base, account: str(r.account, 64), ticker: str(r.ticker, 16), group: str(r.group, 30) };
       case 'hlabel':
         return { ...base, account: str(r.account, 64), ticker: str(r.ticker, 16), type: str(r.type, 40) };
       case 'ptx':
@@ -335,6 +338,9 @@
     const tgroups = {};
     of('tgroup').forEach((g) => { if (g.ticker && g.group) tgroups[g.ticker] = g.group; });
 
+    const pgroups = {};
+    of('pgroup').forEach((g) => { if (g.account && g.ticker && g.group) pgroups[`${g.account}|${g.ticker}`] = g.group; });
+
     const typeLabels = {};
     of('hlabel').forEach((l) => { if (l.account && l.ticker && l.type) typeLabels[`${l.account}|${l.ticker}`] = l.type; });
 
@@ -447,6 +453,7 @@
       categories,
       rules,
       tgroups,
+      pgroups,
       gorder,
       budget,
       quarters,

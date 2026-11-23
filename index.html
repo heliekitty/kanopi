@@ -873,6 +873,30 @@ body { line-height: 1.4; }
   .subnav a { white-space: nowrap; }
 }
 
+/* Phones: tables marked tbl-keep keep their table layout, scroll sideways, and pin the first column */
+@media (max-width: 599px) {
+  .stack:has(> .card .tbl-keep) { grid-template-columns: minmax(0, 1fr); }
+  .tbl-wrap.tbl-keep { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; min-width: 0; width: 100%; }
+  .tbl-wrap.tbl-keep .tbl { display: table; }
+  .tbl-wrap.tbl-keep .tbl thead { position: static; width: auto; height: auto; overflow: visible; clip: auto; }
+  .tbl-wrap.tbl-keep .tbl tbody { display: table-row-group; }
+  .tbl-wrap.tbl-keep .tbl tr { display: table-row; padding: 0; border-bottom: 0; }
+  .tbl-wrap.tbl-keep .tbl td,
+  .tbl-wrap.tbl-keep .tbl th { display: table-cell; padding: 10px 12px 10px 0; gap: 0; border-bottom: 1px solid var(--border); text-align: left; }
+  .tbl-wrap.tbl-keep .tbl td.num,
+  .tbl-wrap.tbl-keep .tbl th.num,
+  .tbl-wrap.tbl-keep .tbl td.num + td { text-align: right; padding-left: 20px; }
+  .tbl-wrap.tbl-keep .tbl td::before { content: none; }
+  .tbl-wrap.tbl-keep .tbl td:first-child { display: table-cell; font-weight: normal; padding-bottom: 10px; }
+  .tbl-wrap.tbl-keep .tbl th:first-child,
+  .tbl-wrap.tbl-keep .tbl td:first-child {
+    position: sticky; left: 0; z-index: 1; background: var(--card);
+    box-shadow: 8px 0 8px -8px rgba(14, 59, 43, .18);
+  }
+  .tbl-wrap.tbl-keep .tbl th:first-child { z-index: 2; }
+  .tbl-wrap.tbl-keep .tbl td .cell-sub { display: block; margin-left: 0; }
+}
+
 /* Phones: each table row becomes a small stacked block, so nothing scrolls sideways */
 @media (max-width: 599px) {
   .tbl-wrap { overflow-x: visible; }
