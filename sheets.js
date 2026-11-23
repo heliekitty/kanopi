@@ -206,7 +206,8 @@
       seen[base] = (seen[base] || 0) + 1;
       const bankId = String(cell(r, ci.id)).trim();
       const id = bankId ? `x-${hashText(`${member.id}|${bankKey}|${bankId}`)}` : `x-${hashText(`${base}|${seen[base]}`)}`;
-      out.records.push({ id, kind: 'expense', date, name, type, cat, amount, paidBy: member.id, owner });
+      const src = `${member.id}|${bankKey}|${cfg.account || ''}`;
+      out.records.push({ id, kind: 'expense', date, name, type, cat, amount, paidBy: member.id, owner, src });
     });
     return out;
   }

@@ -3225,7 +3225,7 @@
       return;
     }
     if (t.closest('[data-check-version]')) { checkForNewVersion(); return; }
-    if (t.closest('[data-reload-app]')) { window.location.reload(); return; }
+    if (t.closest('[data-reload-app]')) { applyNewVersion(); return; }
     if (t.closest('[data-data-export]')) { resetDataPanel(); dataNote = null; dataPanel = 'export'; route({ keepPlace: true, focus: '#export-pw' }); return; }
     if (t.closest('[data-data-restore]')) { resetDataPanel(); dataNote = null; dataPanel = 'restore'; restore = { stage: 'pick', mode: 'merge' }; route({ keepPlace: true, focus: '#restore-file' }); return; }
     if (t.closest('[data-data-replace]')) { resetDataPanel(); dataNote = null; dataPanel = 'restore'; restore = { stage: 'pick', mode: 'replace' }; route({ keepPlace: true, focus: '#restore-file' }); return; }
@@ -3566,6 +3566,24 @@
     updateText.textContent = text;
     updateRefresh.hidden = !canRefresh;
     updateBanner.hidden = false;
+  }
+
+  // Clears the offline copy of the app files and asks the browser for the newest service worker, then reloads.
+  // Only the cached app files are removed; your records are stored separately and are not touched.
+  async function applyNewVersion() {
+    const status = document.getElementById('version-status');
+    if (status) status.textContent = 'Updating…';
+    try {
+      if (window.caches) {
+        const names = await caches.keys();
+        await Promise.all(names.filter((n) => n.indexOf('kanopi-') === 0).map((n) => caches.delete(n)));
+      }
+      if (navigator.serviceWorker) {
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg) await reg.update();
+      }
+    } catch (e) { /* carry on: the reload below still runs */ }
+    window.location.reload();
   }
 
   // Asks the server (not the offline cache) for version.js and compares it with the running version.

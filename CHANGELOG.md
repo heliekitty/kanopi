@@ -3,17 +3,11 @@
 Versions follow MAJOR.MINOR.PATCH. The current version lives in `version.js`.
 Each deployment gets a line here, newest first.
 
-## 1.1.5 - 2026-11-22
-
-- Import: if Preview or Next fails, the reason shows in the red message on the form instead of doing nothing.
-
-## 1.1.4 - 2026-11-22
-
-- Budget > Planner: amounts for this month count the actual due dates in the month. A weekly item is 4 or 5 times, every 2 weeks is 2 or 3, quarterly, twice-a-year and annual items only count in the months they fall due. Items without a due date use the yearly average.
-
 ## 1.1.3 - 2026-11-22
 
-- Budget > Planner: monthly amounts for weekly items use 4 weeks a month (weekly 400 = 1,600 a month); every 2 weeks = 2 a month; daily = 30 a month.
+- Settings > About: Reload to update clears the saved app files before reloading, so the new version loads. Your records are not touched.
+- Import: if Preview or Next fails, the reason shows in the red message on the form instead of doing nothing.
+- Budget > Planner: amounts for this month count the actual due dates in the month. A weekly item is 4 or 5 times, every 2 weeks is 2 or 3, quarterly, twice-a-year and annual items only count in the months they fall due. Items without a due date use the yearly average.
 
 ## 1.1.2 - 2026-11-22
 

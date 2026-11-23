@@ -140,9 +140,13 @@
 
   // ---- Saved bank formats --------------------------------------------------
 
+  const srcKey = (member, bank, account) => {
+    const norm = String(bank == null ? '' : bank).trim().toLowerCase().replace(/\s+/g, ' ');
+    return `${member}|${norm.replace(/[^a-z0-9]+/g, '-')}|${account || ''}`;
+  };
   const formatId = (module, bank) => `f-${root.KanopiSheets.hashText(`${module}|${String(bank).trim().toLowerCase()}`)}`;
 
-  const api = { MAX_BYTES, parseCsv, findHeaderRow, normalizeAction, parseActivity, parseHoldings, formatId };
+  const api = { MAX_BYTES, parseCsv, findHeaderRow, normalizeAction, parseActivity, parseHoldings, formatId, srcKey };
   root.KanopiImporter = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 }(typeof window !== 'undefined' ? window : globalThis));
