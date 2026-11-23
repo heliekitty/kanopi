@@ -1021,6 +1021,7 @@
       return `
         <details class="lot-acc" open>
           <summary><span>${esc(acct.name)}</span><span class="muted">${esc(clsLabel(acct.cls))}${acct.broker ? ` · ${esc(acct.broker)}${esc(detail)}` : ''} · ${h.shares.toLocaleString('en-US')} shares · ${esc(gain == null ? 'gain unknown' : signedMoney(gain))}</span></summary>
+          <div class="btn-row"><button type="button" class="btn" data-hold-edit data-hold-account="${esc(h.account)}" data-hold-ticker="${esc(h.ticker)}">Edit holding</button></div>
           <div class="lot-scroll${rows.length > 15 ? ' scroll' : ''}"${rows.length > 15 ? ' tabindex="0" role="region" aria-label="Lots, scrollable"' : ''}>
             ${table(`Lots of ${ticker} in ${acct.name}`, [{ t: 'Acquired' }, { t: 'Shares', num: true }, { t: 'Cost / share', num: true }, { t: 'Cost', num: true }, { t: 'Value', num: true }, { t: 'Gain / loss', num: true }, { t: 'Term' }], rows)}
           </div>
@@ -3174,6 +3175,95 @@
 
   // The lots popup lives outside the page so sorting or filtering behind it does not close it.
   const lotDialog = document.getElementById('lot-dialog');
+  // ---- Edit a holding by hand (shares, price, name, type, total cost). An import of the same account and symbol replaces these values.
+  let holdEdit = null;
+
+  function openHoldEdit(account, ticker) {
+    const h = D.holdings.find((x) => x.account === account && x.ticker === ticker);
+    if (!h || !lotDialog) return;
+    holdEdit = { account, ticker, name: h.name || '', type: h.type || '', shares: String(h.shares), price: String(h.price), cost: h.cost == null ? '' : String(h.cost), error: '' };
+    renderHoldEdit();
+    if (!lotDialog.open) lotDialog.showModal();
+    const first = lotDialog.querySelector('#hold-name');
+    if (first) first.focus({ preventScroll: true });
+  }
+
+  function renderHoldEdit() {
+    const d = holdEdit;
+    const types = Array.from(new Set(D.holdings.map((x) => x.type).filter(Boolean)));
+    const acct = D.accounts[d.account];
+    lotDialog.innerHTML = `
+      <div class="dlg-body">
+        <div class="dlg-head">
+          <div><h2 id="lot-title" class="dlg-title">Edit ${esc(d.ticker)}</h2><p class="muted">${esc(acct ? acct.name : '')}</p></div>
+          <button type="button" class="btn" data-hold-cancel>Cancel</button>
+        </div>
+        <form class="member-form" data-hold-form novalidate>
+          <div class="field"><label for="hold-name">Name</label>
+            <input id="hold-name" type="text" maxlength="80" autocomplete="off" data-hold-field="name" value="${esc(d.name)}"></div>
+          <div class="field"><label for="hold-type">Type</label>
+            <input id="hold-type" type="text" maxlength="40" autocomplete="off" list="hold-types" data-hold-field="type" value="${esc(d.type)}">
+            <datalist id="hold-types">${types.map((t) => `<option value="${esc(t)}"></option>`).join('')}</datalist>
+            <p class="muted">Your type is kept on re-import. Leave blank to use the type from the file.</p></div>
+          <div class="field-row">
+            <div class="field"><label for="hold-shares">Shares</label>
+              <input id="hold-shares" type="text" inputmode="decimal" autocomplete="off" data-hold-field="shares" value="${esc(d.shares)}"></div>
+            <div class="field"><label for="hold-price">Price</label>
+              <input id="hold-price" type="text" inputmode="decimal" autocomplete="off" data-hold-field="price" value="${esc(d.price)}"></div>
+          </div>
+          <div class="field"><label for="hold-cost">Total cost (leave blank if unknown)</label>
+            <input id="hold-cost" type="text" inputmode="decimal" autocomplete="off" data-hold-field="cost" value="${esc(d.cost)}"></div>
+          ${d.error ? `<p class="form-error" role="alert">${esc(d.error)}</p>` : ''}
+          <div class="btn-row"><button type="submit" class="btn btn-primary">Save holding</button></div>
+        </form>
+      </div>`;
+  }
+
+  function saveHolding(form) {
+    const d = holdEdit;
+    if (!d) return;
+    const val = (k) => form.querySelector(`[data-hold-field="${k}"]`).value;
+    d.name = val('name').trim().replace(/\s+/g, ' ').slice(0, 80);
+    d.type = val('type').trim().slice(0, 40);
+    d.shares = val('shares'); d.price = val('price'); d.cost = val('cost');
+    const shares = KanopiSheets.parseAmount(d.shares);
+    const price = KanopiSheets.parseAmount(d.price);
+    const costText = d.cost.trim();
+    const cost = costText === '' ? null : KanopiSheets.parseAmount(costText);
+    if (!d.name) d.error = 'Enter a name.';
+    else if (shares === null || !(shares > 0)) d.error = 'Enter the number of shares.';
+    else if (price === null || !(price >= 0)) d.error = 'Enter the price.';
+    else if (costText !== '' && (cost === null || cost < 0)) d.error = 'Enter a valid total cost, or leave it blank.';
+    else d.error = '';
+    if (d.error) { renderHoldEdit(); return; }
+    const type = d.type || 'Other';
+    const existing = D.holdings.find((x) => x.account === d.account && x.ticker === d.ticker);
+    if (isSample()) {
+      Object.assign(existing, { name: d.name, type, shares, price, cost: cost === null ? undefined : cost });
+    } else {
+      // Type lives in its own label record so the next import cannot overwrite it.
+      // The holding record keeps the type from the file.
+      const fileType = (existing && existing.fileType) || 'Other';
+      const now = Date.now();
+      const hash = KanopiSheets.hashText(`${d.account}|${d.ticker}`);
+      const rec = Store.clean({
+        id: `h-${hash}`, kind: 'holding', account: d.account, ticker: d.ticker,
+        name: d.name, type: fileType, shares, price, cost, acquired: (existing && existing.acquired) || '', updatedAt: now
+      });
+      const label = Store.clean({
+        id: `hl-${hash}`, kind: 'hlabel', account: d.account, ticker: d.ticker,
+        type: d.type && d.type !== fileType ? d.type : '', updatedAt: now, deleted: !(d.type && d.type !== fileType) || undefined
+      });
+      writeRecords([rec, label]);
+      refreshData();
+    }
+    const ticker = d.ticker;
+    holdEdit = null;
+    lotDialog.close();
+    route({ keepPlace: true });
+    openLots(ticker);
+  }
+
   function openLots(ticker) {
     if (!lotDialog || typeof lotDialog.showModal !== 'function') return;
     const html = lotsDialog(ticker);
@@ -3185,6 +3275,12 @@
     if (first) first.focus({ preventScroll: true });
   }
   if (lotDialog) {
+    lotDialog.addEventListener('submit', (e) => { if (e.target.matches('[data-hold-form]')) { e.preventDefault(); saveHolding(e.target); } });
+    lotDialog.addEventListener('click', (e) => {
+      const edit = e.target.closest('[data-hold-edit]');
+      if (edit) { openHoldEdit(edit.dataset.holdAccount, edit.dataset.holdTicker); return; }
+      if (e.target.closest('[data-hold-cancel]') && holdEdit) { const t = holdEdit.ticker; holdEdit = null; lotDialog.close(); openLots(t); }
+    });
     lotDialog.addEventListener('click', (e) => { if (e.target === lotDialog || e.target.closest('[data-close-lots]')) lotDialog.close(); });
     lotDialog.addEventListener('close', () => {
       const b = document.querySelector(`[data-open-lots="${lotTrigger}"]`);

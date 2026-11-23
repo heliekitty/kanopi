@@ -9,6 +9,7 @@
 //   fmt      { name, module, map }                              a saved column layout for one bank file; map is JSON
 //   gorder   { names: [group names in the order you chose] }   id is always 'gorder'
 //   tgroup   { ticker, group }                                  the named group a ticker belongs to in Holdings
+//   hlabel   { account, ticker, type }                          your own type for a holding; imports never overwrite it
 //   ptx      { date, type, ticker, qty, amount, account }      portfolio transaction
 //   expense  { date, name, type, cat, amount, paidBy, owner } type: expense | refund | income | transfer
 //   bill     { name, amount, day, owner }                      day of month, 1 to 28
@@ -18,7 +19,7 @@
 
   const DB_NAME = 'kanopi';
   const DB_VERSION = 1;
-  const KINDS = ['member', 'account', 'holding', 'ptx', 'expense', 'bill', 'budget', 'category', 'rule', 'plan', 'tgroup', 'gorder', 'fmt'];
+  const KINDS = ['member', 'account', 'holding', 'ptx', 'expense', 'bill', 'budget', 'category', 'rule', 'plan', 'tgroup', 'hlabel', 'gorder', 'fmt'];
   const DATA_KINDS = KINDS.filter((k) => k !== 'member');
   const MAX_RECORDS = 50000;
   const MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -168,6 +169,8 @@
         return { ...base, ticker: str(r.ticker, 16), group: str(r.group, 30) };
       case 'holding':
         return { ...base, account: str(r.account, 64), ticker: str(r.ticker, 16), name: str(r.name), type: str(r.type, 40), shares: num(r.shares), price: num(r.price), cost: r.cost === null || r.cost === undefined || r.cost === '' ? null : num(r.cost), acquired: dateStr(r.acquired) };
+      case 'hlabel':
+        return { ...base, account: str(r.account, 64), ticker: str(r.ticker, 16), type: str(r.type, 40) };
       case 'ptx':
         return { ...base, date: dateStr(r.date), type: str(r.type, 40), ticker: str(r.ticker, 16), qty: num(r.qty), amount: num(r.amount), account: str(r.account, 64) };
       case 'expense':
@@ -332,6 +335,9 @@
     const tgroups = {};
     of('tgroup').forEach((g) => { if (g.ticker && g.group) tgroups[g.ticker] = g.group; });
 
+    const typeLabels = {};
+    of('hlabel').forEach((l) => { if (l.account && l.ticker && l.type) typeLabels[`${l.account}|${l.ticker}`] = l.type; });
+
     const gorderRec = of('gorder').find((g) => g.id === 'gorder');
     const gorder = gorderRec ? gorderRec.names : [];
 
@@ -346,7 +352,7 @@
     });
 
     const holdings = of('holding').filter((h) => accounts[h.account])
-      .map((h) => ({ ticker: h.ticker, name: h.name, type: h.type || 'Other', account: h.account, shares: h.shares, price: h.price, cost: h.cost == null ? undefined : h.cost, acquired: h.acquired || undefined }));
+      .map((h) => ({ ticker: h.ticker, name: h.name, fileType: h.type || 'Other', type: typeLabels[`${h.account}|${h.ticker}`] || h.type || 'Other', account: h.account, shares: h.shares, price: h.price, cost: h.cost == null ? undefined : h.cost, acquired: h.acquired || undefined }));
 
     const transactions = of('ptx').filter((t) => accounts[t.account] && t.date)
       .map((t) => ({ date: t.date, daysAgo: daysBetween(parseDay(t.date), today), type: t.type || 'Buy', ticker: t.ticker, qty: t.qty || undefined, amount: t.amount, account: t.account }));

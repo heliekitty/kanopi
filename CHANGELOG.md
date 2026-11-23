@@ -3,6 +3,15 @@
 Versions follow MAJOR.MINOR.PATCH. The current version lives in `version.js`.
 Each deployment gets a line here, newest first.
 
+## 1.1.6 - 2026-11-22
+
+- Holding type is now a label you set. Imports no longer overwrite it, even when the file has no Type column. Leave the type blank to use the file's type again.
+- Holding type labels are saved in their own record (hlabel), so backups include them.
+
+## 1.1.5 - 2026-11-22
+
+- Portfolio > Holdings: open a holding's lots and tap Edit holding to change its name, type, shares, price, total cost or acquired date. Blank total cost means unknown. The next import of the same account and ticker overwrites your edit (the import wins).
+
 ## 1.1.4 - 2026-11-22
 
 - Portfolio import: one file can cover several accounts. Map an Account name column; each row goes to the account with that name (not case-sensitive). If a name is not in Kanopi, the preview lists it and nothing imports until it matches.
