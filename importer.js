@@ -78,13 +78,23 @@
   const cleanTicker = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9.\-]/g, '').slice(0, 10);
 
   // map: { date, action, ticker, qty, amount, dateFormat }. rows[0] is the heading row.
+  // When the file has an Account name column, each row is matched to a Kanopi account by its name (not case-sensitive).
+  // ctx.accountByName maps lowercased account names to account ids. Rows whose name is unknown are left out and listed.
+  function accountFor(ctx, nameCell) {
+    if (nameCell === undefined) return { id: ctx.account };
+    const key = String(nameCell || '').trim().toLowerCase();
+    const id = (ctx.accountByName || {})[key];
+    return id ? { id } : { name: String(nameCell || '').trim() || '(blank)' };
+  }
+
   function parseActivity(rows, map, ctx) {
     const S = root.KanopiSheets;
     const head = rows[0].map((h) => h.trim().toLowerCase());
     const col = (name) => (name ? head.indexOf(String(name).trim().toLowerCase()) : -1);
-    const ci = { date: col(map.date), action: col(map.action), ticker: col(map.ticker), qty: col(map.qty), amount: col(map.amount) };
-    const out = { records: [], rows: 0, unreadable: 0, skipped: 0, problems: [] };
+    const ci = { date: col(map.date), action: col(map.action), ticker: col(map.ticker), qty: col(map.qty), amount: col(map.amount), account: col(map.accountName) };
+    const out = { records: [], rows: 0, unreadable: 0, skipped: 0, problems: [], unmatched: [], touched: [] };
     if (ci.date < 0 || ci.action < 0 || ci.amount < 0) { out.problems.push('Choose the Date, Action and Amount columns.'); return out; }
+    if (map.accountName && ci.account < 0) { out.problems.push('The Account name column is not in the file.'); return out; }
     const seen = {};
     rows.slice(1).forEach((r) => {
       if (!r.some((c) => c !== '')) return;
@@ -99,10 +109,13 @@
       const qty = qtyRaw === null ? 0 : Math.abs(qtyRaw);
       const amount = Math.abs(amountRaw);
       if ((type === 'Buy' || type === 'Sell') && (!ticker || !(qty > 0))) { out.unreadable += 1; return; }
-      const base = `${ctx.account}|${date}|${type}|${ticker}|${qty}|${Math.round(amount * 100)}`;
+      const acct = accountFor(ctx, ci.account >= 0 ? r[ci.account] : undefined);
+      if (!acct.id) { out.unmatched.push(acct.name); return; }
+      const base = `${acct.id}|${date}|${type}|${ticker}|${qty}|${Math.round(amount * 100)}`;
       seen[base] = (seen[base] || 0) + 1;
-      const rec = { id: `p-${S.hashText(`${base}|${seen[base]}`)}`, kind: 'ptx', date, type, ticker, qty, amount, account: ctx.account };
+      const rec = { id: `p-${S.hashText(`${base}|${seen[base]}`)}`, kind: 'ptx', date, type, ticker, qty, amount, account: acct.id };
       out.records.push(rec);
+      if (out.touched.indexOf(acct.id) === -1) out.touched.push(acct.id);
     });
     return out;
   }
@@ -112,9 +125,10 @@
     const S = root.KanopiSheets;
     const head = rows[0].map((h) => h.trim().toLowerCase());
     const col = (name) => (name ? head.indexOf(String(name).trim().toLowerCase()) : -1);
-    const ci = { ticker: col(map.ticker), name: col(map.name), shares: col(map.shares), price: col(map.price), value: col(map.value), cost: col(map.cost), type: col(map.type) };
-    const out = { records: [], rows: 0, unreadable: 0, skipped: 0, problems: [] };
+    const ci = { ticker: col(map.ticker), name: col(map.name), shares: col(map.shares), price: col(map.price), value: col(map.value), cost: col(map.cost), type: col(map.type), account: col(map.accountName) };
+    const out = { records: [], rows: 0, unreadable: 0, skipped: 0, problems: [], unmatched: [], touched: [] };
     if (ci.ticker < 0 || ci.shares < 0 || (ci.price < 0 && ci.value < 0)) { out.problems.push('Choose the Ticker and Shares columns, and either Price or Value.'); return out; }
+    if (map.accountName && ci.account < 0) { out.problems.push('The Account name column is not in the file.'); return out; }
     const seen = {};
     rows.slice(1).forEach((r) => {
       if (!r.some((c) => c !== '')) return;
@@ -125,13 +139,16 @@
       let price = ci.price >= 0 ? S.parseAmount(r[ci.price]) : null;
       if ((price === null || !(price > 0)) && ci.value >= 0) { const v = S.parseAmount(r[ci.value]); price = v !== null && shares ? v / shares : null; }
       if (price === null || !(price >= 0)) { out.unreadable += 1; return; }
-      if (seen[ticker]) { out.skipped += 1; return; }
-      seen[ticker] = true;
+      const acct = accountFor(ctx, ci.account >= 0 ? r[ci.account] : undefined);
+      if (!acct.id) { out.unmatched.push(acct.name); return; }
+      if (seen[`${acct.id}|${ticker}`]) { out.skipped += 1; return; }
+      seen[`${acct.id}|${ticker}`] = true;
+      if (out.touched.indexOf(acct.id) === -1) out.touched.push(acct.id);
       const cost = ci.cost >= 0 ? S.parseAmount(r[ci.cost]) : null;
       const name = ci.name >= 0 ? r[ci.name].slice(0, 80) : '';
       const type = ci.type >= 0 && r[ci.type] ? r[ci.type].slice(0, 40) : (/\betf\b/i.test(name) ? 'ETF' : 'Other');
       out.records.push({
-        id: `h-${S.hashText(`${ctx.account}|${ticker}`)}`, kind: 'holding', account: ctx.account, ticker, name: name || ticker, type,
+        id: `h-${S.hashText(`${acct.id}|${ticker}`)}`, kind: 'holding', account: acct.id, ticker, name: name || ticker, type,
         shares, price: Math.round(price * 10000) / 10000, cost: cost !== null && cost > 0 ? cost : null, acquired: ''
       });
     });

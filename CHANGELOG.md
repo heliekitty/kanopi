@@ -3,6 +3,10 @@
 Versions follow MAJOR.MINOR.PATCH. The current version lives in `version.js`.
 Each deployment gets a line here, newest first.
 
+## 1.1.4 - 2026-11-22
+
+- Portfolio import: one file can cover several accounts. Map an Account name column; each row goes to the account with that name (not case-sensitive). If a name is not in Kanopi, the preview lists it and nothing imports until it matches.
+
 ## 1.1.3 - 2026-11-22
 
 - Settings > About: Reload to update clears the saved app files before reloading, so the new version loads. Your records are not touched.

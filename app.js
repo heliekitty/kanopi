@@ -2607,7 +2607,7 @@
           <div class="field"><label for="imp-bank">${portfolio ? 'Brokerage' : 'Bank or card'}</label>
             <input id="imp-bank" type="text" maxlength="40" list="imp-banks" autocomplete="off" data-imp="bank" value="${esc(imp.bank)}" placeholder="${portfolio ? 'Fidelity' : 'Chase checking'}">
             <datalist id="imp-banks">${savedFormats(imp.module).map((f) => `<option value="${esc(f.name)}"></option>`).join('')}</datalist></div>
-          ${portfolio ? `<div class="field"><label for="imp-account">Account</label>
+          ${portfolio ? `<div class="field"><label for="imp-account">Account (leave blank if the file has an Account name column)</label>
             <select id="imp-account" data-imp="account"><option value="">Choose an account</option>${accts.map((id) => opt(id, `${D.accounts[id].name}${D.accounts[id].last4 ? ` ····${D.accounts[id].last4}` : ''}`, imp.account)).join('')}</select>
             ${accts.length ? '' : '<p class="muted">No accounts for this person yet. Add one under Portfolio > Accounts first.</p>'}</div>` : `
           <div class="field-row">
@@ -2647,11 +2647,13 @@
             <select id="map-spending" data-imp-map="spending">${opt('negative', 'A negative number', (imp.map || {}).spending || 'negative')}${opt('positive', 'A positive number', (imp.map || {}).spending)}</select></div></div>`;
       } else if (imp.module === 'activity') {
         fields = `<div class="field-row">${sel('date', 'Date', true)}${sel('action', 'Action', true)}</div>
-          <div class="field-row">${sel('ticker', 'Ticker or symbol')}${sel('qty', 'Quantity')}${sel('amount', 'Amount', true)}</div>${fmtSel}`;
+          <div class="field-row">${sel('ticker', 'Ticker or symbol')}${sel('qty', 'Quantity')}${sel('amount', 'Amount', true)}</div>
+          <div class="field-row">${sel('accountName', 'Account name (if the file covers several accounts)')}</div>${fmtSel}`;
       } else {
         fields = `<div class="field-row">${sel('ticker', 'Ticker or symbol', true)}${sel('name', 'Name')}${sel('shares', 'Shares', true)}</div>
           <div class="field-row">${sel('price', 'Price')}${sel('value', 'Market value')}${sel('cost', 'Total cost basis')}${sel('type', 'Type')}</div>
-          <p class="muted">Choose Price, or Market value (Kanopi divides by shares).</p>`;
+          <div class="field-row">${sel('accountName', 'Account name (if the file covers several accounts)')}</div>
+          <p class="muted">Choose Price, or Market value (Kanopi divides by shares). If the file has an Account name column, the account above is not needed.</p>`;
       }
       return `
         <form class="member-form data-panel" data-imp-map-form novalidate>
@@ -2741,7 +2743,7 @@
     const text = (imp.text || imp.paste || '').trim();
     imp.error = '';
     if (!imp.bank.trim()) { imp.error = 'Enter the bank or brokerage name.'; return false; }
-    if (imp.module !== 'budget' && !imp.account) { imp.error = 'Choose the account.'; return false; }
+
     if (!text) { imp.error = 'Choose a file, or paste the rows.'; return false; }
     const parsed = KanopiImporter.parseCsv(text);
     if (parsed.error) { imp.error = parsed.error; return false; }
@@ -2774,6 +2776,9 @@
     if (missing.length) { imp.error = 'Choose a column for every item marked required.'; return false; }
     if (imp.module === 'budget' && !m.amount && !(m.debit && m.credit)) { imp.error = 'Choose the Amount column, or both Debit and Credit.'; return false; }
     if (imp.module === 'holdings' && !m.price && !m.value) { imp.error = 'Choose the Price or the Market value column.'; return false; }
+    if (imp.module !== 'budget' && !imp.account && !m.accountName) { imp.error = 'Choose the account, or map the Account name column.'; return false; }
+    const accountByName = {};
+    Object.keys(D.accounts).forEach((id) => { accountByName[String(D.accounts[id].name || '').trim().toLowerCase()] = id; });
     const rows = imp.rows.slice(imp.headerIdx);
     let out;
     if (imp.module === 'budget') {
@@ -2784,19 +2789,25 @@
         dateFormat: m.dateFormat || 'MDY', spending: m.spending || 'negative', countsIn: imp.countsIn === 'shared' ? 'Joint' : ''
       }, { members: memberList, categories: D.categories, rules: D.rules || {}, vendorKey: Store.vendorKey });
     } else if (imp.module === 'activity') {
-      out = KanopiImporter.parseActivity(rows, m, { account: imp.account });
+      out = KanopiImporter.parseActivity(rows, m, { account: imp.account, accountByName });
     } else {
-      out = KanopiImporter.parseHoldings(rows, m, { account: imp.account });
+      out = KanopiImporter.parseHoldings(rows, m, { account: imp.account, accountByName });
     }
     if (out.problems.length && !out.records.length) { imp.error = out.problems[0]; return false; }
+    if (out.unmatched && out.unmatched.length) {
+      const names = Array.from(new Set(out.unmatched)).slice(0, 8).join(', ');
+      imp.error = `These account names are not in Kanopi: ${names}. Rename the account in Portfolio > Accounts, or fix the names in the file.`;
+      return false;
+    }
     const floor = importFloor();
     const before = floor ? out.records.filter((r) => r.date < floor).length : 0;
     if (floor) out.records = out.records.filter((r) => r.date >= floor);
     const have = new Set(records.map((r) => r.id));
     const fresh = out.records.filter((r) => !have.has(r.id));
     const fileIds = new Set(out.records.map((r) => r.id));
+    const touched = m.accountName ? (out.touched || []) : [imp.account];
     const removed = imp.module === 'holdings'
-      ? records.filter((r) => r.kind === 'holding' && !r.deleted && r.account === imp.account && !fileIds.has(r.id)) : [];
+      ? records.filter((r) => r.kind === 'holding' && !r.deleted && touched.indexOf(r.account) !== -1 && !fileIds.has(r.id)) : [];
     imp.result = {
       rows: out.rows, all: out.records, fresh: imp.module === 'holdings' ? out.records.filter((r) => !have.has(r.id)) : fresh,
       same: out.records.length - (imp.module === 'holdings' ? out.records.filter((r) => !have.has(r.id)).length : fresh.length),
