@@ -322,6 +322,17 @@
       .trim();
   }
 
+  // Learned stores match by keyword: a saved name matches when it contains the keyword as whole words.
+  // When several keywords match, the longest one wins. Returns the matched keyword or ''.
+  function ruleMatch(name, rules) {
+    const text = ` ${vendorKey(name)} `;
+    let best = '';
+    Object.keys(rules || {}).forEach((k) => {
+      if (k && text.indexOf(` ${k} `) !== -1 && k.length > best.length) best = k;
+    });
+    return best;
+  }
+
   const ruleId = (key) => 'r-' + key.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50);
 
   function build(records, sample, today) {
@@ -478,6 +489,10 @@
     const monthName = (d) => d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
     const sameMonth = (ref, yearOffset) => (d) => d.getFullYear() === ref.getFullYear() + yearOffset && d.getMonth() === ref.getMonth();
     const yoy = {
+      sixMonths: [5, 4, 3, 2, 1, 0].map((back) => {
+        const m = new Date(today.getFullYear(), today.getMonth() - back, 1);
+        return { label: m.toLocaleDateString('en-US', { month: 'short' }), thisYear: total(sameMonth(m, 0)), lastYear: total(sameMonth(m, -1)) };
+      }),
       month: {
         thisLabel: monthName(prevMonth),
         lastLabel: monthName(new Date(prevMonth.getFullYear() - 1, prevMonth.getMonth(), 1)),
@@ -525,7 +540,7 @@
   }
 
   root.KanopiStore = {
-    KINDS, DATA_KINDS, TX_TYPES, FREQ, monthlyOf, spendOf, vendorKey, ruleId, open, allRecords, putRecords, replaceAll, clean: cleanRecord, getMeta, setMeta,
+    KINDS, DATA_KINDS, TX_TYPES, FREQ, monthlyOf, spendOf, vendorKey, ruleMatch, ruleId, open, allRecords, putRecords, replaceAll, clean: cleanRecord, getMeta, setMeta,
     planMerge, makeBackup, readBackup, openEncrypted, build
   };
 })(window);

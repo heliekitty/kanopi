@@ -3,6 +3,19 @@
 Versions follow MAJOR.MINOR.PATCH. The current version lives in `version.js`.
 Each deployment gets a line here, newest first.
 
+## 1.4.0 - 2026-11-23
+
+- Budget > Transactions: tap Edit or Delete to open a dialog instead of expanding the row. Actions sit in the lower right on phones.
+- Transactions: select several rows (Select, then tick, or Select all for the rows currently shown) and change their category, owner, or type, or delete them together. A category only applies to expenses and refunds.
+- Transactions: negative amounts show in parentheses, e.g. ($34.00). Refunds show as Refund. Transfers are labelled "Transfer or payment". "No category" is bold.
+- Config (formerly Stores): categories and budget goals are edited together in one card. Category dropdowns are sorted A to Z, with Other last.
+- Config > Learned stores: edit the keyword for a store. Renaming a keyword does not retag past transactions. Matching uses whole words and the longest keyword wins.
+- Budget > Overview: Upcoming bills sits above Where the money goes. Spending over time is now a six-month chart, with last year in gray and this year in green, plus a table of the numbers.
+- Planner: frequency and due date share one line, and Edit and Delete sit in the lower right. Subscription status reads Active or Inactive.
+- Card imports: a single Amount column; charges are positive and refunds negative by default. The separate Debit and Credit columns are gone.
+- Settings: order is Prices, Data (with Sync and Privacy), About, Design. Manage Family Members opens from the who-menu. The bottom navigation has five items, including Settings.
+- Price history: daily price tabs for holdings, transaction tickers, and benchmarks load with Refresh prices.
+
 ## 1.3.0 - 2026-11-23
 
 - Performance > Returns: time-weighted portfolio returns for 1 day, 1 month, year to date, 1 year, and since start, compared with SPY, DIA, QQQ, IWM, and IJH. Contributions and withdrawals do not change the portfolio return. Holdings only, all accounts.

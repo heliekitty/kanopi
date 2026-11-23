@@ -7,7 +7,7 @@
  * The parsing functions are plain functions so they can be tested without Google.
  *
  * Config tab, row 1 headings (any order, any capitalization):
- *   Tab, Member, Bank, Account, Date, Description, Amount, Debit, Credit,
+ *   Tab, Member, Bank, Account, Date, Description, Amount,
  *   Category, ID, Date format, Spending, Counts in
  * "Date", "Description", "Amount" and the other column settings hold the heading text
  * used in row 1 of that bank's tab.
@@ -91,7 +91,7 @@
 
   const CONFIG_KEYS = {
     tab: 'tab', member: 'member', bank: 'bank', account: 'account', date: 'date', description: 'description',
-    amount: 'amount', debit: 'debit', credit: 'credit', category: 'category', id: 'id',
+    amount: 'amount', category: 'category', id: 'id',
     'date format': 'dateFormat', spending: 'spending', 'counts in': 'countsIn'
   };
 
@@ -106,7 +106,7 @@
     ['tab', 'member', 'date', 'description'].forEach((k) => {
       if (col[k] === undefined) problems.push(`The Config tab needs a "${k === 'tab' ? 'Tab' : k === 'member' ? 'Member' : k === 'date' ? 'Date' : 'Description'}" column.`);
     });
-    if (col.amount === undefined && col.debit === undefined && col.credit === undefined) problems.push('The Config tab needs an "Amount" column, or "Debit" and "Credit" columns.');
+    if (col.amount === undefined) problems.push('The Config tab needs an "Amount" column.');
     if (problems.length) return { entries: [], problems };
     const get = (r, k) => (col[k] === undefined ? '' : String(r[col[k]] == null ? '' : r[col[k]]).trim());
     const entries = [];
@@ -116,9 +116,9 @@
         tab: get(r, 'tab'), member: get(r, 'member'), bank: get(r, 'bank') || get(r, 'tab'),
         account: /card|credit/i.test(get(r, 'account')) ? 'card' : 'checking',
         date: get(r, 'date'), description: get(r, 'description'), amount: get(r, 'amount'),
-        debit: get(r, 'debit'), credit: get(r, 'credit'), category: get(r, 'category'), id: get(r, 'id'),
+        category: get(r, 'category'), id: get(r, 'id'),
         dateFormat: /^dmy$/i.test(get(r, 'dateFormat')) ? 'DMY' : 'MDY',
-        spending: /^pos/i.test(get(r, 'spending')) ? 'positive' : 'negative',
+        spending: /^pos/i.test(get(r, 'spending')) ? 'positive' : /^neg/i.test(get(r, 'spending')) ? 'negative' : (/card|credit/i.test(get(r, 'account')) ? 'positive' : 'negative'),
         countsIn: get(r, 'countsIn'), line: i + 2
       };
       if (!e.tab) { problems.push(`Config row ${e.line}: the Tab name is empty.`); return; }
@@ -152,12 +152,12 @@
     const find = (name) => (name ? head.indexOf(norm(name)) : -1);
     const ci = {
       date: find(cfg.date), desc: find(cfg.description), amount: find(cfg.amount),
-      debit: find(cfg.debit), credit: find(cfg.credit), cat: find(cfg.category), id: find(cfg.id)
+      cat: find(cfg.category), id: find(cfg.id)
     };
     const missing = [];
     if (ci.date < 0) missing.push(`Date ("${cfg.date}")`);
     if (ci.desc < 0) missing.push(`Description ("${cfg.description}")`);
-    if (ci.amount < 0 && ci.debit < 0 && ci.credit < 0) missing.push(`Amount ("${cfg.amount || cfg.debit || cfg.credit}")`);
+    if (ci.amount < 0) missing.push(`Amount ("${cfg.amount}")`);
     if (missing.length) { problems.push(`Tab "${cfg.tab}": row 1 has no column for ${missing.join(', ')}.`); return out; }
 
     const catByLabel = {};
@@ -172,11 +172,7 @@
       const date = parseDate(cell(r, ci.date), cfg.dateFormat);
       const name = String(cell(r, ci.desc)).trim().replace(/\s+/g, ' ');
       let spend = null; // positive = money out
-      if (ci.debit >= 0 || ci.credit >= 0) {
-        const d = parseAmount(cell(r, ci.debit)); const c = parseAmount(cell(r, ci.credit));
-        if (d) spend = Math.abs(d); else if (c) spend = -Math.abs(c);
-      }
-      if (spend === null && ci.amount >= 0) {
+      if (ci.amount >= 0) {
         const a = parseAmount(cell(r, ci.amount));
         if (a !== null) spend = cfg.spending === 'positive' ? a : -a;
       }
@@ -195,8 +191,8 @@
         const typed = norm(cell(r, ci.cat));
         if (typed && catByLabel[typed]) cat = catByLabel[typed];
         if (!cat) {
-          const key = ctx.vendorKey ? ctx.vendorKey(name) : '';
-          if (key && ctx.rules && ctx.categories[ctx.rules[key]]) cat = ctx.rules[key];
+          const key = ctx.ruleMatch && ctx.rules ? ctx.ruleMatch(name, ctx.rules) : '';
+          if (key && ctx.categories[ctx.rules[key]]) cat = ctx.rules[key];
         }
         if (!cat) out.uncategorized += 1;
       }

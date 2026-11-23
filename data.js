@@ -46,6 +46,14 @@ window.KANOPI_SAMPLE = {
   ],
 
   yoy: {
+    sixMonths: [
+      { label: 'Jun', thisYear: { redpanda: 480, koala: 440, shared: 3050 }, lastYear: { redpanda: 470, koala: 430, shared: 3010 } },
+      { label: 'Jul', thisYear: { redpanda: 520, koala: 500, shared: 3280 }, lastYear: { redpanda: 500, koala: 470, shared: 3190 } },
+      { label: 'Aug', thisYear: { redpanda: 455, koala: 460, shared: 3120 }, lastYear: { redpanda: 480, koala: 445, shared: 3240 } },
+      { label: 'Sep', thisYear: { redpanda: 500, koala: 480, shared: 3210 }, lastYear: { redpanda: 470, koala: 455, shared: 3150 } },
+      { label: 'Oct', thisYear: { redpanda: 510, koala: 470, shared: 3390 }, lastYear: { redpanda: 490, koala: 455, shared: 3280 } },
+      { label: 'Nov', thisYear: { redpanda: 300, koala: 290, shared: 1900 }, lastYear: { redpanda: 480, koala: 460, shared: 3100 } }
+    ],
     month: {
       thisLabel: 'Oct 2026', lastLabel: 'Oct 2025',
       thisYear: { redpanda: 510, koala: 470, shared: 3390 },

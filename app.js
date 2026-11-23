@@ -128,10 +128,11 @@
   const money = new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
+    currencySign: 'accounting',
     maximumFractionDigits: 0
   });
 
-  const money2 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 });
+  const money2 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', currencySign: 'accounting', minimumFractionDigits: 2 });
   // Whole dollars when there are no cents, otherwise with cents.
   // Always with cents (the planner).
   const fmtc = (n) => money2.format(n);
@@ -145,9 +146,9 @@
   const pctOf = (part, whole) => (whole > 0 ? (part / whole) * 100 : 0);
   const sumOf = (list) => list.reduce((t, n) => t + n, 0);
   const signed = (n) => (n < 0 ? '−' : '+');
-  const signedMoney = (n) => `${n < 0 ? '−' : ''}${money.format(Math.abs(n))}`;
+  const signedMoney = (n) => money.format(n);
   const pctText = (n, digits) => `${n.toFixed(digits === undefined ? 1 : digits)}%`;
-  const signedPctText = (n) => `${signed(n)}${Math.abs(n).toFixed(1)}%`;
+  const signedPctText = (n) => (n < 0 ? `(${Math.abs(n).toFixed(1)}%)` : `+${n.toFixed(1)}%`);
 
   // ---- Who is being viewed -----------------------------------------------
 
@@ -388,6 +389,8 @@
       const blocks = filled(cells, 'block');
       const amounts = filled(cells, 'amount');
       const secs = filled(cells, 'secondary');
+      const details = filled(cells, 'detail');
+      const actsRight = head.some((h) => h.card === 'actions');
       const titleHtml = titles.length ? titles.map(([c]) => c).join(' ') : (metas.length ? metas.shift()[0] : '');
       const amountRaw = amounts.length ? amounts[0][0] : (secs.length ? secs[0][0] : '');
       const amountHtml = String(amountRaw).indexOf('tx-amt') !== -1 ? amountRaw : `<span class="tx-amt">${amountRaw}</span>`;
@@ -395,11 +398,12 @@
       return `
         <li class="tx-row${strong ? ' strong' : ''}">
           <div class="tx-main">
-            <span class="tx-title"><span class="tx-name">${titleHtml}</span>${acts.join('')}</span>
+            <span class="tx-title"><span class="tx-name">${titleHtml}</span>${actsRight ? '' : acts.join('')}</span>
             ${metas.length ? `<span class="tx-meta">${metas.map(([c]) => c).join(' · ')}</span>` : ''}
+            ${details.length ? `<span class="tx-meta">${details.map(([c]) => c).join(' · ')}</span>` : ''}
             ${blocks.map(([c]) => `<span class="tx-block">${c}</span>`).join('')}
           </div>
-          ${amountRaw !== '' || secHtml ? `<div class="tx-side">${amountHtml}${secHtml}</div>` : ''}
+          ${amountRaw !== '' || secHtml || (actsRight && acts.length) ? `<div class="tx-side">${amountHtml}${secHtml}${actsRight ? acts.join('') : ''}</div>` : ''}
         </li>`;
     }).join('');
     return `<ul class="tx-list tbl-cards" aria-label="${esc(caption)}">${items}</ul>`;
@@ -529,7 +533,7 @@
         ${whoIcon(who)}
         <svg class="who-chev" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M4 6l4 4 4-4"/></svg>
       </button>
-      <ul class="who-list" id="who-list" role="menu" aria-label="Show finances for" hidden>${items}</ul>`;
+      <ul class="who-list" id="who-list" role="menu" aria-label="Show finances for" hidden>${items}<li role="none"><button type="button" class="who-item who-manage" role="menuitem" data-manage-family>Manage family members</button></li></ul>`;
   }
 
   function closeWhoMenu(returnFocus) {
@@ -550,6 +554,10 @@
         const btn = document.getElementById('who-btn');
         if (btn) btn.focus();
         return;
+      }
+      if (event.target.closest('[data-manage-family]')) {
+        closeWhoMenu(false); resetFamilyEditing(); familyPanel = true;
+        route({ keepPlace: true, focus: '[data-family-close]' }); return;
       }
       const btn = event.target.closest('#who-btn');
       if (!btn) return;
@@ -1393,7 +1401,7 @@
 
   // ---- Budget ------------------------------------------------------------
 
-  const BUDGET_LINKS = [['budget', 'Overview'], ['budget-transactions', 'Transactions'], ['budget-planner', 'Planner'], ['budget-stores', 'Stores']];
+  const BUDGET_LINKS = [['budget', 'Overview'], ['budget-transactions', 'Transactions'], ['budget-planner', 'Planner'], ['budget-stores', 'Config']];
 
   const sumOwners = (obj) => sumOf(ownersInView().map((o) => obj[o] || 0));
 
@@ -1411,7 +1419,29 @@
     };
   }
 
-  let historyView = 'quarters'; // 'quarters' or 'yoy'
+  // Six months, each with last year (gray) and this year (green) side by side. Vertical bars, one scale.
+  function yearBars(rows, cur, prev) {
+    if (!rows.length) return '<p class="muted">No spending recorded yet.</p>';
+    const max = Math.max(1, ...rows.map((r) => Math.max(r.thisYear, r.lastYear)));
+    const pct = (v) => Math.round((v / max) * 100);
+    const groups = rows.map((r) => `
+      <div class="yb-group">
+        <div class="yb-bars">
+          <span class="yb-bar prior" style="height:${pct(r.lastYear)}%" title="${esc(r.label)} ${prev}: ${money.format(r.lastYear)}"></span>
+          <span class="yb-bar current" style="height:${pct(r.thisYear)}%" title="${esc(r.label)} ${cur}: ${money.format(r.thisYear)}"></span>
+        </div>
+        <span class="yb-label">${esc(r.label)}</span>
+      </div>`).join('');
+    const table_ = table('Monthly spending', [{ t: 'Month' }, { t: String(prev), num: true }, { t: String(cur), num: true }],
+      rows.map((r) => [esc(r.label), money.format(r.lastYear), money.format(r.thisYear)]), false, false);
+    return `
+      <div class="yb-legend" aria-hidden="true"><span><i class="sw prior"></i>${prev}</span><span><i class="sw current"></i>${cur}</span></div>
+      <div class="yb-chart" role="img" aria-label="Monthly spending for the last six months, ${cur} compared with ${prev}">${groups}</div>
+      <details class="how-to"><summary>Show the numbers</summary>${table_}</details>
+      <p class="muted">Last six months, including this month so far. Spending after refunds.</p>`;
+  }
+
+  let familyPanel = false; // Manage Family Members modal is open
 
   function renderBudget() {
     const rows = budgetRows().sort((a, b) => b.spent - a.spent);
@@ -1438,13 +1468,9 @@
     });
     if (otherValue > 0) slices.push({ label: 'Other', value: otherValue, color: PIE_OTHER });
 
-    const qItems = D.quarters.map((q) => ({ label: q.label, value: sumOwners(q), text: money.format(sumOwners(q)) }));
-    const m = comparison(D.yoy.month);
-    const q = comparison(D.yoy.quarter);
-    const history = historyView === 'yoy'
-      ? `<h3 class="sub-label">Month</h3>${bars(m.rows, 'Month compared with last year', { max: m.max })}<p class="muted">${esc(m.note)}</p>`
-        + `<h3 class="sub-label">Quarter</h3>${bars(q.rows, 'Quarter compared with last year', { max: q.max })}<p class="muted">${esc(q.note)}</p>`
-      : columns(qItems, 'Total spending by quarter') + `<p class="muted">Calendar quarters.${isSample() ? ' Sample history.' : ''}</p>`;
+    const thisYr = new Date().getFullYear();
+    const sixRows = (D.yoy.sixMonths || []).map((s) => ({ label: s.label, thisYear: sumOwners(s.thisYear), lastYear: sumOwners(s.lastYear) }));
+    const history = yearBars(sixRows, thisYr, thisYr - 1);
 
     const bills = upcomingPayments().filter((p) => p.kind === 'Bill').slice(0, 5);
     const billList = bills.length
@@ -1461,16 +1487,15 @@
           + leafMeter('Total budget spent', pctOf(totals.spent, totals.budget), totalOver)
           + (totalOver ? `<p class="over-note">Over budget by ${money.format(totals.spent - totals.budget)}</p>` : '')
           + bars(meterRows, 'Spending against budget by category', { max: 100, meter: true }), 'wide')}
-        ${card('share-title', 'Where the money goes', pie(slices, 'Share of spending by category'))}
-        ${card('qtr-title', 'Spending over time',
-          toggles('history', historyView, [['quarters', 'Last three quarters'], ['yoy', 'Compared with last year']], 'Spending view') + history)}
         ${card('bills-title', 'Upcoming bills', billList + '<p class="muted"><a class="text-link" href="#payments">See all upcoming payments</a></p>')}
+        ${card('share-title', 'Where the money goes', pie(slices, 'Share of spending by category'))}
+        ${card('qtr-title', 'Spending over time', history)}
       </div>`;
   }
 
   // ---- Transactions ---------------------------------------------------------------------
 
-  const TYPE_OPTIONS = [['expense', 'Expense'], ['refund', 'Refund or reimbursement'], ['income', 'Income'], ['transfer', 'Transfer or card payment']];
+  const TYPE_OPTIONS = [['expense', 'Expense'], ['refund', 'Refund'], ['income', 'Income'], ['transfer', 'Transfer or payment']];
   const TYPE_LABEL = { expense: 'Expense', refund: 'Refund', income: 'Income', transfer: 'Transfer' };
   const NONE_CAT = '__none__'; // filter value for transactions with no category
   const ICON_PENCIL = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>';
@@ -1486,7 +1511,7 @@
 
   // Amount as shown in the grid: refunds carry the opposite sign of an expense.
   function txAmount(e) {
-    return typeOf(e) === 'refund' ? `−${fmt(e.amount)}` : fmt(e.amount);
+    return typeOf(e) === 'refund' ? `(${fmt(e.amount)})` : fmt(e.amount);
   }
 
   function filteredTransactions() {
@@ -1512,12 +1537,18 @@
 
   const TX_HEAD = [
     { t: 'Date', card: 'meta' }, { t: 'Description', card: 'title' }, { t: 'Category', card: 'meta' },
-    { t: 'Counts in', card: 'block' }, { t: 'Amount', num: true, card: 'amount' }, { t: 'Actions' }
+    { t: 'Counts in', card: 'block' }, { t: 'Amount', num: true, card: 'amount' }, { t: 'Actions', card: 'actions' }
   ];
 
   function txCells(e) {
+    const base = txCellsBase(e);
+    return txSelecting ? [`<input type="checkbox" class="tx-check" data-tx-check="${esc(e.key)}" aria-label="Select ${esc(e.name)}"${txSel.has(e.key) ? ' checked' : ''}>`].concat(base) : base;
+  }
+
+  function txCellsBase(e) {
     const typed = typeOf(e);
     const catText = hasCategory(typed) ? (e.cat && D.categories[e.cat] ? D.categories[e.cat] : 'No category') : TYPE_LABEL[typed];
+    const catHtml = catText === 'No category' ? '<strong>No category</strong>' : esc(catText);
     const tone = typed === 'expense' ? 'out' : (typed === 'refund' || typed === 'income') ? 'in' : '';
     const who = e.owner === 'shared'
       ? `<span class="avatar-pair" role="img" aria-label="Joint">${avatarHtml(memberList[0] ? memberList[0].id : 'together')}${memberList[1] ? avatarHtml(memberList[1].id) : ''}</span>`
@@ -1525,7 +1556,7 @@
     return [
       esc(formatDate(e.date)),
       esc(e.name),
-      esc(catText),
+      catHtml,
       `<span class="tx-who">${who}</span>`,
       `<span class="tx-amt${tone ? ' ' + tone : ''}">${esc(txAmount(e))}</span>`,
       txActions(e)
@@ -1541,8 +1572,82 @@
     const summary = `<p class="muted tx-summary" role="status">${list.length} ${list.length === 1 ? 'transaction' : 'transactions'} · ${esc(range ? range[1].toLowerCase() : '')} · spending ${fmt(spending)} after refunds · income ${fmt(income)}</p>`;
     if (!list.length) return summary + '<p class="muted">Nothing matches. Clear the filters or widen the date range.</p>';
     return summary
-      + table('Transactions', TX_HEAD, shown.map(txCells), true)
-      + `<p class="muted">Newest first. Refunds and reimbursements are entered as their own transaction with the opposite sign. Transfers and card payments are not counted as spending.${list.length > shown.length ? ` Showing the first ${shown.length} of ${list.length}. Narrow the filters to see the rest.` : ''}</p>`;
+      + (txSelecting ? bulkBarHtml(shown.map((e) => e.key)) : '')
+      + table('Transactions', txSelecting ? [{ t: 'Select', card: 'block' }].concat(TX_HEAD) : TX_HEAD, shown.map(txCells), true)
+      + (list.length > shown.length ? `<p class="muted">Showing the first ${shown.length} of ${list.length}. Narrow the filters to see the rest.</p>` : '');
+  }
+
+  function bulkBarHtml(shownKeys) {
+    const n = txSel.size;
+    const allOn = shownKeys.length > 0 && shownKeys.every((k) => txSel.has(k));
+    const cats = '<option value="">Choose a category</option>' + sortedCatKeys().map((k) => `<option value="${esc(k)}">${esc(D.categories[k])}</option>`).join('');
+    const owners = '<option value="">Choose a person</option>' + ownersInView().map((o) => `<option value="${esc(o)}">${esc(ownerLabel(o))}</option>`).join('');
+    const types = '<option value="">Choose a type</option>' + TYPE_OPTIONS.map((t) => `<option value="${esc(t[0])}">${esc(t[1])}</option>`).join('');
+    const row = (kind, label, select, button) => `<div class="bulk-row"><label class="sr-only" for="bulk-${kind}">${label}</label>${select}<button type="button" class="btn" data-bulk-apply="${kind}" ${n ? '' : 'disabled'}>${button}</button></div>`;
+    return `
+      <div class="bulk-bar" role="region" aria-label="Bulk actions">
+        <div class="bulk-row"><span role="status">${n} selected</span>
+          <button type="button" class="btn" data-tx-all ${allOn ? 'disabled' : ''}>Select all shown</button>
+          <button type="button" class="btn" data-tx-none ${n ? '' : 'disabled'}>Clear</button></div>
+        ${row('cat', 'Category', `<select id="bulk-cat">${cats}</select>`, 'Set category')}
+        ${row('owner', 'Counts in', `<select id="bulk-owner">${owners}</select>`, 'Set counts in')}
+        ${row('type', 'Type', `<select id="bulk-type">${types}</select>`, 'Set type')}
+        ${txBulkConfirm
+          ? `<div class="bulk-row"><span class="muted">Delete ${n} ${n === 1 ? 'transaction' : 'transactions'}? This can't be undone.</span><button type="button" class="btn btn-danger" data-bulk-delete-yes>Yes, delete</button><button type="button" class="btn" data-bulk-delete-no>No</button></div>`
+          : `<div class="bulk-row"><button type="button" class="btn btn-danger" data-bulk-delete ${n ? '' : 'disabled'}>Delete selected</button></div>`}
+        ${bulkError ? `<p class="form-error" role="alert">${esc(bulkError)}</p>` : ''}
+      </div>`;
+  }
+
+  // Applies one change to every checked transaction it fits. Categories only apply to expenses and refunds.
+  function bulkApply(kind) {
+    const val = (document.getElementById(`bulk-${kind}`) || {}).value || '';
+    if (!val) {
+      bulkError = kind === 'cat' ? 'Choose a category first.' : kind === 'owner' ? 'Choose a person first.' : 'Choose a type first.';
+      route({ keepPlace: true, focus: `#bulk-${kind}` }); return;
+    }
+    const patchFor = kind === 'cat'
+      ? (e) => (hasCategory(e.type) ? { cat: val } : null)
+      : kind === 'owner'
+        ? (e) => ({ owner: val, paidBy: val !== 'shared' ? val : e.paidBy })
+        : (e) => ({ type: val, cat: hasCategory(val) ? e.cat : '' });
+    const changes = [];
+    let skipped = 0;
+    txSel.forEach((key) => {
+      const e = txByKey(key);
+      if (!e) return;
+      const patch = patchFor(e);
+      if (patch) changes.push({ key, patch }); else skipped += 1;
+    });
+    if (!changes.length) { bulkError = 'None of the checked transactions can take that change.'; route({ keepPlace: true, focus: `#bulk-${kind}` }); return; }
+    if (isSample()) {
+      changes.forEach(({ key, patch }) => { const idx = Number(String(key).slice(1)); D.expenses[idx] = { ...D.expenses[idx], ...patch }; });
+    } else {
+      const list = [];
+      changes.forEach(({ key, patch }) => {
+        const old = records.find((r) => r.id === key && r.kind === 'expense' && !r.deleted);
+        if (old) list.push({ ...old, ...patch, updatedAt: Date.now() });
+      });
+      if (list.length) writeRecords(list);
+      refreshData();
+    }
+    toolNote = `Updated ${changes.length} ${changes.length === 1 ? 'transaction' : 'transactions'}${skipped ? `. ${skipped} could not take that change and were left as they were` : ''}.`;
+    txSel = new Set(); txBulkConfirm = false; bulkError = '';
+    route({ keepPlace: true, focus: '[data-tx-select-toggle]' });
+  }
+
+  function bulkDelete() {
+    const keys = Array.from(txSel);
+    if (isSample()) {
+      keys.map((k) => Number(String(k).slice(1))).sort((a, b) => b - a).forEach((i) => D.expenses.splice(i, 1));
+    } else {
+      writeRecords(keys.map((id) => ({ id, kind: 'expense', updatedAt: Date.now(), deleted: true })));
+    }
+    if (txDraft && txDraft.editKey && txSel.has(txDraft.editKey)) txDraft = null;
+    toolNote = `Deleted ${keys.length} ${keys.length === 1 ? 'transaction' : 'transactions'}.`;
+    txSel = new Set(); txBulkConfirm = false; bulkError = '';
+    refreshData();
+    route({ keepPlace: true, focus: '[data-tx-select-toggle]' });
   }
 
   function txFilterControls() {
@@ -1576,10 +1681,11 @@
       ${pageTop(subnav(BUDGET_LINKS, 'budget-transactions'))}
       <div class="btn-row tool-row">
         <button type="button" class="btn btn-primary" data-open-tx aria-expanded="${txDraft !== null}">Add a transaction</button>
+        <button type="button" class="btn" data-tx-select-toggle aria-pressed="${txSelecting}">${txSelecting ? 'Done selecting' : 'Select transactions'}</button>
       </div>
       ${toolNote ? `<p class="tool-note" role="status">${esc(toolNote)}</p>` : ''}
       <div class="stack">
-        ${txDraft ? card('tx-title', txDraft.editKey ? 'Edit a transaction' : 'Add a transaction', txForm(), 'wide') : ''}
+        ${txDraft && !txDraft.editKey ? card('tx-title', 'Add a transaction', txForm(), 'wide') : ''}
         ${card('exp-title', 'Transactions', txFilterControls() + `<div id="tx-results">${txResultsHtml()}</div>`, 'wide')}
       </div>`;
   }
@@ -1732,8 +1838,8 @@
   }
   const dueText = (p) => { const d = nextDue(p); return d ? esc(formatDate(d)) : '—'; };
 
-  const PLAN_HEAD = [{ t: 'Category', card: 'meta' }, { t: 'Description', card: 'title' }, { t: 'Frequency', card: 'meta' }, { t: 'Due Date', card: 'meta' }, { t: 'Amount', num: true, card: 'amount' }, { t: 'Monthly amount', num: true, card: 'secondary' }, { t: 'Actions' }];
-  const SUB_HEAD = [{ t: 'Category', card: 'meta' }, { t: 'Description', card: 'title' }, { t: 'Subscription', card: 'meta' }, { t: 'Frequency', card: 'meta' }, { t: 'Due Date', card: 'meta' }, { t: 'Amount', num: true, card: 'amount' }, { t: 'Monthly amount', num: true, card: 'secondary' }, { t: 'Actions' }];
+  const PLAN_HEAD = [{ t: 'Category', card: 'meta' }, { t: 'Description', card: 'title' }, { t: 'Frequency', card: 'detail' }, { t: 'Due Date', card: 'detail' }, { t: 'Amount', num: true, card: 'amount' }, { t: 'Monthly amount', num: true, card: 'secondary' }, { t: 'Actions', card: 'actions' }];
+  const SUB_HEAD = [{ t: 'Category', card: 'meta' }, { t: 'Description', card: 'title' }, { t: 'Subscription', card: 'meta' }, { t: 'Frequency', card: 'detail' }, { t: 'Due Date', card: 'detail' }, { t: 'Amount', num: true, card: 'amount' }, { t: 'Monthly amount', num: true, card: 'secondary' }, { t: 'Actions', card: 'actions' }];
 
   function renderPlanner() {
     const g = planGroups();
@@ -1767,7 +1873,7 @@
     if (regRows.length) regRows.push({ cells: ['Total regular expenses', '', '', '', '', fmtc(regTotal), ''], strong: true });
 
     // Subscriptions
-    const yesNo = (p) => `<span class="pill${p.sub === 'no' ? ' pill-off' : ''}">${p.sub === 'no' ? 'No' : 'Yes'}</span>`;
+    const yesNo = (p) => `<span class="pill${p.sub === 'no' ? ' pill-off' : ''}">${p.sub === 'no' ? 'Inactive' : 'Active'}</span>`;
     const subMembers = g.memberGroups.filter((m) => m.subs > 0).map((m) => [
       esc(`${m.label} subscriptions`),
       `<button type="button" class="text-link link-btn" data-plan-view="${esc(m.id)}">See ${esc(m.label)}'s items</button>`,
@@ -1784,13 +1890,9 @@
       ${pageTop(subnav(BUDGET_LINKS, 'budget-planner'))}
       <div class="btn-row tool-row">
         <button type="button" class="btn btn-primary" data-open-plan aria-expanded="${planPanel}">Add an item</button>
-        <button type="button" class="btn" data-open-goals aria-expanded="${budgetPanel === 'goals'}">Set budget goals</button>
-        <button type="button" class="btn" data-open-cats aria-expanded="${budgetPanel === 'cats'}">Edit categories</button>
       </div>
       ${toolNote ? `<p class="tool-note" role="status">${esc(toolNote)}</p>` : ''}
       <div class="stack">
-        ${budgetPanel === 'goals' ? card('goals-title', 'Set budget goals', goalsForm(), 'wide') : ''}
-        ${budgetPanel === 'cats' ? card('cats-title', 'Edit categories', catsForm(), 'wide') : ''}
         ${card('plan-chart-title', 'Monthly income and expenses', planChart(g), 'wide')}
         ${card('plan-income-title', 'Income',
           incomeRows.length ? table('Planned income', PLAN_HEAD, incomeRows, true) : '<p class="muted">No income items yet. Use Add an item.</p>', 'wide')}
@@ -1842,7 +1944,7 @@
     const opt = (v, label, cur) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(label)}</option>`;
     const owners = ownersInView();
     const ownerList = owners.indexOf(d.owner) === -1 ? owners.concat(d.owner) : owners;
-    const cats = `<option value=""${d.cat === '' ? ' selected' : ''} disabled>Choose a category</option>` + Object.keys(D.categories).map((k) => opt(k, D.categories[k], d.cat)).join('');
+    const cats = `<option value=""${d.cat === '' ? ' selected' : ''} disabled>Choose a category</option>` + sortedCatKeys().map((k) => opt(k, D.categories[k], d.cat)).join('');
     const isIncome = d.kind === 'income';
     return `
       <form class="member-form" data-plan-form novalidate>
@@ -1911,13 +2013,25 @@
 
   // ---- Budget tools: goals, categories, manual transactions, learned stores -----------------
 
-  let budgetPanel = null;   // null | 'goals' | 'cats'
+  let budgetPanel = null;   // null | 'goals' | 'cats' | 'setup' (both, in one card)
   let goalsDraft = null;    // { owner: { cat: 'text' } }
   let catDraft = null;      // { names: { catKey: 'text' }, newName: '' }
   let catConfirm = null;
   let toolError = '';
   let txDraft = null;
-  let txConfirm = null; // key of the row waiting for a Yes/No delete
+  let txConfirm = null; // key of the transaction waiting for a Yes/No delete
+  let txModal = null; // 'edit' or 'delete' while the transaction modal is open
+  let txSelecting = false; // checkboxes are showing on the Transactions list
+  let txSel = new Set();   // keys of the checked transactions
+  let txBulkConfirm = false;
+  let bulkError = '';
+
+  // Filter changes clear the selection, so a bulk action only ever touches rows on screen.
+  function txFilterChanged(name, value) {
+    txFilter[name] = value;
+    txSel = new Set(); txBulkConfirm = false; bulkError = '';
+    updateTxResults();
+  }
   let toolNote = '';
   const sampleOverrides = {}; // typed-in goals while looking at sample data: { owner: { cat: amount } }
 
@@ -1925,7 +2039,7 @@
   const MAX_CAT_NAME = 40;
 
   function resetBudgetTools() {
-    budgetPanel = null; goalsDraft = null; catDraft = null; catConfirm = null; toolError = ''; txDraft = null; txConfirm = null; toolNote = '';
+    budgetPanel = null; goalsDraft = null; catDraft = null; catConfirm = null; toolError = ''; txDraft = null; txConfirm = null; txModal = null; toolNote = '';
     planPanel = false; planDraft = null; planEditing = null; planConfirm = null;
     acctPanel = false; acctDraft = null; acctEditing = null; acctConfirm = null; acctError = ''; acctNote = '';
     groupsPanel = false; groupsDraft = null; holdNote = '';
@@ -1982,6 +2096,13 @@
   }
 
   // ---- Goals
+
+  // Categories and budget goals share one card, so both drafts open together.
+  function openSetup() {
+    openGoals();
+    budgetPanel = 'setup';
+    catDraft = freshCatDraft([]);
+  }
 
   function openGoals() {
     resetBudgetTools();
@@ -2196,9 +2317,6 @@
 
   function txActions(e) {
     const k = esc(e.key);
-    if (txConfirm === e.key) {
-      return `<span class="row-actions"><span class="muted">Delete this?</span><button type="button" class="btn btn-danger" data-tx-delete-yes="${k}">Yes, delete</button><button type="button" class="btn" data-tx-delete-no>No</button></span>`;
-    }
     return `<span class="row-actions"><button type="button" class="act-icon" data-tx-edit="${k}" aria-label="Edit ${esc(e.name)}" title="Edit">${ICON_PENCIL}</button><button type="button" class="act-icon" data-tx-delete="${k}" aria-label="Delete ${esc(e.name)}" title="Delete">${ICON_TRASH}</button></span>`;
   }
 
@@ -2210,6 +2328,38 @@
       type: e.type, date: isoDay(e.date), name: e.name, amount: Number(e.amount).toFixed(2), cat: e.cat || '', catTouched: true,
       paidBy: e.paidBy, owner: e.owner, hint: '', editKey: key
     };
+  }
+
+  // Edit and delete open a modal, rebuilt on every draw like the planner's form.
+  function syncTxDialog(opts) {
+    document.querySelectorAll('#tx-dialog').forEach((el) => el.remove());
+    const editing = txModal === 'edit' && txDraft && txDraft.editKey;
+    const deleting = txModal === 'delete' && txConfirm && txByKey(txConfirm);
+    if (!editing && !deleting) return;
+    const dlg = document.createElement('dialog');
+    dlg.id = 'tx-dialog';
+    dlg.className = 'modal';
+    dlg.setAttribute('aria-labelledby', 'tx-modal-title');
+    if (editing) {
+      dlg.innerHTML = `<div class="modal-head"><h2 id="tx-modal-title" class="card-label">Edit a transaction</h2></div><div class="modal-body">${txForm()}</div>`;
+    } else {
+      const e = txByKey(txConfirm);
+      dlg.innerHTML = `<div class="modal-head"><h2 id="tx-modal-title" class="card-label">Delete ${esc(e.name)}?</h2></div><div class="modal-body"><p class="muted">This can't be undone.</p><div class="btn-row"><button type="button" class="btn btn-danger" data-tx-delete-yes="${esc(txConfirm)}">Yes, delete</button><button type="button" class="btn" data-tx-delete-no>No</button></div></div>`;
+    }
+    dlg.addEventListener('close', () => { if (txModal) closeTxModal(); });
+    view.appendChild(dlg);
+    dlg.showModal();
+    const want = opts && opts.focus ? dlg.querySelector(opts.focus) : null;
+    const first = want || dlg.querySelector('input, select, button');
+    if (first) first.focus({ preventScroll: true });
+  }
+
+  function closeTxModal() {
+    const wasEdit = txModal === 'edit';
+    txModal = null;
+    txConfirm = null;
+    if (wasEdit) txDraft = null;
+    route({ keepPlace: true, focus: '[data-open-tx]' });
   }
 
   function deleteTx(key) {
@@ -2260,7 +2410,7 @@
     const d = txDraft;
     const opt = (v, label, cur) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(label)}</option>`;
     const cats = `<option value=""${d.cat === '' ? ' selected' : ''}>No category</option>`
-      + Object.keys(D.categories).map((k) => opt(k, D.categories[k], d.cat)).join('');
+      + sortedCatKeys().map((k) => opt(k, D.categories[k], d.cat)).join('');
     const owners = ownersInView().map((o) => opt(o, ownerLabel(o), d.owner)).join('');
     const nameLabel = d.type === 'income' ? 'Source or description' : 'Store or description';
     const hint = d.type === 'refund'
@@ -2296,8 +2446,8 @@
   // Looks up a learned category for the store name and fills it in, unless one was chosen by hand.
   function suggestCategory() {
     if (!txDraft || txDraft.catTouched || !hasCategory(txDraft.type)) return;
-    const key = Store.vendorKey(txDraft.name);
-    const cat = key && D.rules ? D.rules[key] : '';
+    const key = D.rules ? Store.ruleMatch(txDraft.name, D.rules) : '';
+    const cat = key ? D.rules[key] : '';
     if (cat && D.categories[cat]) {
       txDraft.cat = cat;
       txDraft.hint = `Filled in from a past entry for "${titleCase(key)}".`;
@@ -2363,18 +2513,54 @@
 
   // ---- Learned stores (Settings)
 
+  let ruleEditing = null; // keyword being renamed
+  let ruleError = '';
+
+  // Renames a keyword. The category stays, and past transactions are not changed.
+  function saveRuleEdit(oldKey, raw) {
+    const next = Store.vendorKey(raw);
+    if (!next) ruleError = 'Enter a store name or keyword.';
+    else if (next.length < 3) ruleError = 'Use at least 3 letters so it does not match too much.';
+    else if (next !== oldKey && D.rules && D.rules[next] !== undefined) ruleError = `"${titleCase(next)}" is already in the list.`;
+    if (ruleError) { route({ keepPlace: true, focus: '#rule-name-input' }); return; }
+    if (next !== oldKey) {
+      const cat = D.rules[oldKey];
+      if (isSample()) { delete D.rules[oldKey]; D.rules[next] = cat; }
+      else {
+        writeRecords([
+          { id: Store.ruleId(oldKey), kind: 'rule', updatedAt: Date.now(), deleted: true },
+          { id: Store.ruleId(next), kind: 'rule', updatedAt: Date.now(), vendor: next, cat }
+        ]);
+        refreshData();
+      }
+    }
+    ruleEditing = null; ruleError = '';
+    route({ keepPlace: true, focus: `[data-rule-edit="${next}"]` });
+  }
+
   function rulesCard() {
     const keys = Object.keys(D.rules || {}).sort();
     const shown = keys;
-    const opts = (cur) => Object.keys(D.categories).map((k) => `<option value="${esc(k)}"${k === cur ? ' selected' : ''}>${esc(D.categories[k])}</option>`).join('');
+    const opts = (cur) => sortedCatKeys().map((k) => `<option value="${esc(k)}"${k === cur ? ' selected' : ''}>${esc(D.categories[k])}</option>`).join('');
     const list = shown.length
       ? `<ul class="plain-list">${shown.map((k, i) => `
+          ${ruleEditing === k ? `
+          <li class="member-row rule-row">
+            <form class="rule-edit" data-rule-form="${esc(k)}" novalidate>
+              <label class="sr-only" for="rule-name-input">Keyword</label>
+              <input id="rule-name-input" data-rule-input type="text" autocomplete="off" value="${esc(k)}">
+              <button type="submit" class="btn btn-primary">Save</button>
+              <button type="button" class="btn" data-rule-cancel>Cancel</button>
+              ${ruleError ? `<p class="form-error" role="alert">${esc(ruleError)}</p>` : ''}
+            </form>
+          </li>` : `
           <li class="member-row rule-row">
             <span class="pay-main"><span class="pay-name">${esc(titleCase(k))}</span></span>
             <label class="sr-only" for="rule-${i}">Category for ${esc(titleCase(k))}</label>
             <select id="rule-${i}" data-rule-cat="${esc(k)}">${opts(D.rules[k])}</select>
+            <button type="button" class="btn" data-rule-edit="${esc(k)}" aria-label="Edit keyword ${esc(titleCase(k))}">Edit</button>
             <button type="button" class="btn" data-rule-remove="${esc(k)}" aria-label="Forget ${esc(titleCase(k))}">Forget</button>
-          </li>`).join('')}</ul>${keys.length > shown.length ? `<p class="muted">Showing the first ${shown.length} of ${keys.length}.</p>` : ''}`
+          </li>`}`).join('')}</ul>${keys.length > shown.length ? `<p class="muted">Showing the first ${shown.length} of ${keys.length}.</p>` : ''}`
       : '<p class="muted">Nothing learned yet. When you add a transaction, Kanopi remembers the category you chose for that store.</p>';
     return card('rules-title', 'Learned stores',
       list + `<p class="muted">When a store name matches, its category is filled in for you. Changing or forgetting a store here never changes past transactions.</p>`);
@@ -2383,7 +2569,19 @@
   function renderStores() {
     return `
       ${pageTop(subnav(BUDGET_LINKS, 'budget-stores'))}
-      <div class="stack">${rulesCard()}</div>`;
+      <div class="btn-row tool-row">
+        <button type="button" class="btn" data-open-setup aria-expanded="${budgetPanel === 'setup'}">Categories and budget goals</button>
+      </div>
+      <div class="stack">${budgetPanel === 'setup' ? card('setup-title', 'Categories and budget goals', `<h3 class="sub-label">Categories</h3>${catsForm()}<h3 class="sub-label">Budget goals</h3>${goalsForm()}`, 'wide') : ''}${rulesCard()}</div>`;
+  }
+
+  // Category dropdowns: alphabetical by name, with Other always last.
+  function sortedCatKeys() {
+    return Object.keys(D.categories).sort((a, b) => {
+      if (a === 'other') return 1;
+      if (b === 'other') return -1;
+      return String(D.categories[a]).localeCompare(String(D.categories[b]), undefined, { sensitivity: 'base' });
+    });
   }
 
   // ---- Google Sheets sync (Settings card, menu button) ----------------------
@@ -2438,7 +2636,7 @@
     if (navigator.onLine === false) { showSyncBanner('You are offline. Nothing changed on this device. Try again when you have internet.'); return Promise.resolve(); }
     sheetsBusy = true; updateSyncLabel();
     return KanopiSheets.pull(s).then((data) => {
-      const res = KanopiSheets.importAll(data.config, data.tabs, { members: memberList, categories: D.categories, rules: D.rules || {}, vendorKey: Store.vendorKey });
+      const res = KanopiSheets.importAll(data.config, data.tabs, { members: memberList, categories: D.categories, rules: D.rules || {}, vendorKey: Store.vendorKey, ruleMatch: Store.ruleMatch });
       const have = new Set(records.filter((r) => r.kind === 'expense').map((r) => r.id));
       const fresh = res.records.filter((r) => !have.has(r.id));
       const stamp = Date.now();
@@ -2492,7 +2690,7 @@
         <p class="muted">Add a tab named <strong>Config</strong>. Row 1 holds these headings. Each following row describes one bank tab.</p>
         <ul class="muted">
           <li><strong>Tab</strong>, <strong>Member</strong>: the bank tab's name, and whose it is (a family member's name).</li>
-          <li><strong>Date</strong>, <strong>Description</strong>, <strong>Amount</strong>: the heading text used in row 1 of that bank tab. If the bank splits money in and out, use <strong>Debit</strong> and <strong>Credit</strong> instead of Amount.</li>
+          <li><strong>Date</strong>, <strong>Description</strong>, <strong>Amount</strong>: the heading text used in row 1 of that bank tab. </li>
           <li>Optional: <strong>Bank</strong>, <strong>Account</strong> (Checking or Card), <strong>Category</strong> and <strong>ID</strong> (a heading in the bank tab), <strong>Date format</strong> (MDY or DMY), <strong>Spending</strong> (negative if charges show as minus, positive if they show as plus), <strong>Counts in</strong> (a name, or Joint).</li>
         </ul>
         <p class="muted">Paste each export over the top of the bank tab, starting at A1. Two identical purchases on the same day are kept as two. If you paste below old rows instead, an overlapping block counts as new purchases. Delete any account-number column before you paste.</p>
@@ -2690,13 +2888,13 @@
       const sample = imp.rows.slice(imp.headerIdx, imp.headerIdx + 4);
       const sampleTable = table('First rows of the file', sample[0].map((h) => ({ t: h || ' ' })), sample.slice(1).map((r) => r.map((c) => esc(c))));
       let fields = '';
+      const spendNow = (imp.map || {}).spending || (imp.acctKind === 'card' ? 'positive' : 'negative');
       if (imp.module === 'budget') {
         fields = `<div class="field-row">${sel('date', 'Date', true)}${sel('description', 'Description', true)}</div>
-          <div class="field-row">${sel('amount', 'Amount')}${sel('debit', 'Debit')}${sel('credit', 'Credit')}</div>
-          <p class="muted">Choose Amount, or choose both Debit and Credit.</p>
+          <div class="field-row">${sel('amount', 'Amount', true)}</div>
           <div class="field-row">${sel('category', 'Category')}${sel('id', 'Bank reference ID')}</div>
           <div class="field-row">${fmtSel}<div class="field"><label for="map-spending">In the Amount column, spending shows as</label>
-            <select id="map-spending" data-imp-map="spending">${opt('negative', 'A negative number', (imp.map || {}).spending || 'negative')}${opt('positive', 'A positive number', (imp.map || {}).spending)}</select></div></div>`;
+            <select id="map-spending" data-imp-map="spending">${opt('negative', 'A negative number', spendNow)}${opt('positive', 'A positive number', spendNow)}</select></div></div>`;
       } else if (imp.module === 'activity') {
         fields = `<div class="field-row">${sel('date', 'Date', true)}${sel('action', 'Action', true)}</div>
           <div class="field-row">${sel('ticker', 'Ticker or symbol')}${sel('qty', 'Quantity')}${sel('amount', 'Amount', true)}</div>
@@ -2826,7 +3024,7 @@
     const need = imp.module === 'budget' ? ['date', 'description'] : imp.module === 'activity' ? ['date', 'action', 'amount'] : ['ticker', 'shares'];
     const missing = need.filter((k) => !m[k]);
     if (missing.length) { imp.error = 'Choose a column for every item marked required.'; return false; }
-    if (imp.module === 'budget' && !m.amount && !(m.debit && m.credit)) { imp.error = 'Choose the Amount column, or both Debit and Credit.'; return false; }
+    if (imp.module === 'budget' && !m.amount) { imp.error = 'Choose the Amount column.'; return false; }
     if (imp.module === 'holdings' && !m.price && !m.value) { imp.error = 'Choose the Price or the Market value column.'; return false; }
     if (imp.module !== 'budget' && !imp.account && !m.accountName) { imp.error = 'Choose the account, or map the Account name column.'; return false; }
     const accountByName = {};
@@ -2837,9 +3035,9 @@
       const member = memberList.find((x) => x.id === imp.member);
       out = KanopiSheets.parseTab(rows, {
         tab: 'import', member: member.label, bank: imp.bank.trim(), account: imp.acctKind, date: m.date, description: m.description,
-        amount: m.amount || '', debit: m.debit || '', credit: m.credit || '', category: m.category || '', id: m.id || '',
-        dateFormat: m.dateFormat || 'MDY', spending: m.spending || 'negative', countsIn: imp.countsIn === 'shared' ? 'Joint' : ''
-      }, { members: memberList, categories: D.categories, rules: D.rules || {}, vendorKey: Store.vendorKey });
+        amount: m.amount || '', category: m.category || '', id: m.id || '',
+        dateFormat: m.dateFormat || 'MDY', spending: m.spending || (imp.acctKind === 'card' ? 'positive' : 'negative'), countsIn: imp.countsIn === 'shared' ? 'Joint' : ''
+      }, { members: memberList, categories: D.categories, rules: D.rules || {}, vendorKey: Store.vendorKey, ruleMatch: Store.ruleMatch });
     } else if (imp.module === 'activity') {
       out = KanopiImporter.parseActivity(rows, m, { account: imp.account, accountByName });
     } else {
@@ -3261,25 +3459,49 @@
     });
   }
 
-  function renderSettings() {
+  function familyBody() {
     const full = memberList.length >= MAX_MEMBERS;
+    return `<ul class="plain-list">${memberList.map(memberRow).join('')}
+        ${editing === 'new' ? `<li class="member-row member-edit">${memberForm()}</li>` : ''}</ul>
+       ${editing === 'new' ? '' : `<div class="btn-row"><button type="button" class="btn" data-member-add ${full ? 'disabled' : ''}>Add a family member</button></div>`}
+       <p class="muted">${full ? `Up to ${MAX_MEMBERS} members. ` : ''}New members start with no data. A member who has accounts, budget items or payments can't be deleted. Changes are saved on this device only until sync is built.</p>`;
+  }
+
+  // Manage Family Members opens from the view menu. Rebuilt on every draw, like the planner's form.
+  function syncFamilyDialog(opts) {
+    document.querySelectorAll('#family-dialog').forEach((el) => el.remove());
+    if (!familyPanel) return;
+    const dlg = document.createElement('dialog');
+    dlg.id = 'family-dialog';
+    dlg.className = 'modal';
+    dlg.setAttribute('aria-labelledby', 'family-modal-title');
+    dlg.innerHTML = `<div class="modal-head"><h2 id="family-modal-title" class="card-label">Manage Family Members</h2></div><div class="modal-body">${familyBody()}<div class="btn-row"><button type="button" class="btn btn-primary" data-family-close>Done</button></div></div>`;
+    dlg.addEventListener('close', () => { if (familyPanel) closeFamily(); });
+    view.appendChild(dlg);
+    dlg.showModal();
+    const want = opts && opts.focus ? dlg.querySelector(opts.focus) : null;
+    const first = want || dlg.querySelector('input, select, button');
+    if (first) first.focus({ preventScroll: true });
+  }
+
+  function closeFamily() {
+    familyPanel = false;
+    resetFamilyEditing();
+    route({ keepPlace: true, focus: '#who-btn' });
+  }
+
+  function renderSettings() {
+    const syncRows = `
+          <p class="row"><span>Method</span><span>Backup file shared through iCloud Drive</span></p>
+          <p class="row"><span>Cadence</span><span>Monthly</span></p>
+          <p class="row"><span>Last export</span><span>${esc(whenText(lastExport))}</span></p>
+          <p class="row"><span>Last restore</span><span>${esc(whenText(lastRestore))}</span></p>
+          <p class="muted">Restoring merges the file into this device. When both of you changed the same item, the newer edit wins.</p>`;
+    const privacyNote = `<p class="muted">Kanopi never stores Social Security numbers, bank or account numbers, or logins. ${isSample() ? 'Everything you see now is sample data.' : 'Your data stays on this device. It leaves only when you export a backup.'}</p>`;
     return `
       <div class="stack">
-        ${card('fam-title', 'Family',
-          `<ul class="plain-list">${memberList.map(memberRow).join('')}
-            ${editing === 'new' ? `<li class="member-row member-edit">${memberForm()}</li>` : ''}</ul>
-           ${editing === 'new' ? '' : `<div class="btn-row"><button type="button" class="btn" data-member-add ${full ? 'disabled' : ''}>Add a family member</button></div>`}
-           <p class="muted">${full ? `Up to ${MAX_MEMBERS} members. ` : ''}New members start with no data. A member who has accounts, budget items or payments can't be deleted. Changes are saved on this device only until sync is built.</p>`)}
-        ${card('data-title', 'Data', dataCard())}
         ${card('prices-title', 'Prices', pricesCard())}
-        ${card('sync-title', 'Sync',
-          `<p class="row"><span>Method</span><span>Backup file shared through iCloud Drive</span></p>
-           <p class="row"><span>Cadence</span><span>Monthly</span></p>
-           <p class="row"><span>Last export</span><span>${esc(whenText(lastExport))}</span></p>
-           <p class="row"><span>Last restore</span><span>${esc(whenText(lastRestore))}</span></p>
-           <p class="muted">Restoring merges the file into this device. When both of you changed the same item, the newer edit wins.</p>`)}
-        ${card('priv-title', 'Privacy',
-          `<p class="muted">Kanopi never stores Social Security numbers, bank or account numbers, or logins. ${isSample() ? 'Everything you see now is sample data.' : 'Your data stays on this device. It leaves only when you export a backup.'}</p>`)}
+        ${card('data-title', 'Data', dataCard() + `<h3 class="sub-label">Sync</h3>${syncRows}<h3 class="sub-label">Privacy</h3>${privacyNote}`)}
         ${card('about-title', 'About',
           `<p class="row"><span>App</span><span>Kanopi</span></p>
            <p class="row"><span>Version</span><span>${esc(V.version)}</span></p>
@@ -3369,7 +3591,7 @@
     taxes: { title: 'Taxes', tab: 'taxes', render: renderTaxes },
     budget: { title: 'Budget', doc: 'Overview', tab: 'budget', render: renderBudget },
     'budget-transactions': { title: 'Budget', doc: 'Transactions', tab: 'budget', render: renderTransactions },
-    'budget-stores': { title: 'Budget', doc: 'Stores', tab: 'budget', render: renderStores },
+    'budget-stores': { title: 'Budget', doc: 'Config', tab: 'budget', render: renderStores },
     'budget-planner': { title: 'Budget', doc: 'Planner', tab: 'budget', render: renderPlanner },
     preferences: { title: 'Settings', tab: 'preferences', render: renderSettings }
   };
@@ -3615,6 +3837,7 @@
     if (!booted) return; // wait for stored data to load (init below)
     const keepPlace = !!(opts && opts.keepPlace);
     if (!keepPlace && lotDialog && lotDialog.open) lotDialog.close();
+    if (!keepPlace) { txModal = null; familyPanel = false; ruleEditing = null; ruleError = ''; }
     let requested = location.hash.replace('#', '') || 'home';
     if (requested === 'budget-expenses') requested = 'budget-transactions';
     if (requested === 'portfolio-transactions') { requested = 'portfolio-activity'; history.replaceState(null, '', '#portfolio-activity'); }
@@ -3627,6 +3850,8 @@
     document.title = `${page.doc ? page.title + ' · ' + page.doc : page.title} · Kanopi`;
     view.innerHTML = page.render();
     syncPlanDialog(opts);
+    syncTxDialog(opts);
+    syncFamilyDialog(opts);
     renderWhoMenu();
 
     document.querySelectorAll('.nav a').forEach((a) => {
@@ -3677,8 +3902,6 @@
       return;
     }
     if (t.closest('[data-restore-apply]')) { applyRestore(); return; }
-    const histBtn = t.closest('[data-history]');
-    if (histBtn) { historyView = histBtn.dataset.history === 'yoy' ? 'yoy' : 'quarters'; route({ keepPlace: true, focus: `[data-history="${historyView}"]` }); return; }
     if (t.closest('[data-hold-add]')) { openHoldAdd(); return; }
     const actSortBtn = t.closest('[data-act-sort]');
     if (actSortBtn) {
@@ -3714,16 +3937,18 @@
     const acctOk = t.closest('[data-acct-delete-confirm]');
     if (acctOk) { deleteAcct(acctOk.dataset.acctDeleteConfirm); acctConfirm = null; route({ keepPlace: true, focus: '[data-open-acct]' }); return; }
     if (t.closest('[data-acct-cancel]')) { acctPanel = false; acctDraft = null; acctEditing = null; acctError = ''; route({ keepPlace: true, focus: '[data-open-acct]' }); return; }
-    if (t.closest('[data-open-goals]')) { openGoals(); route({ keepPlace: true, focus: '[data-goal]' }); return; }
-    if (t.closest('[data-open-cats]')) { openCats(); route({ keepPlace: true, focus: '[data-cat-name]' }); return; }
+    if (t.closest('[data-family-close]')) { closeFamily(); return; }
+    if (t.closest('[data-rule-edit]')) { ruleEditing = t.closest('[data-rule-edit]').dataset.ruleEdit; ruleError = ''; route({ keepPlace: true, focus: '#rule-name-input' }); return; }
+    if (t.closest('[data-rule-cancel]')) { ruleEditing = null; ruleError = ''; route({ keepPlace: true }); return; }
+    if (t.closest('[data-open-setup]')) { openSetup(); route({ keepPlace: true, focus: '[data-goal]' }); return; }
     if (t.closest('[data-open-tx]')) { openTx(); route({ keepPlace: true, focus: '#tx-name' }); return; }
     const txEdit = t.closest('[data-tx-edit]');
-    if (txEdit) { openTxEdit(txEdit.dataset.txEdit); route({ keepPlace: true, focus: '#tx-name' }); return; }
+    if (txEdit) { openTxEdit(txEdit.dataset.txEdit); txModal = 'edit'; route({ keepPlace: true, focus: '#tx-name' }); return; }
     const txDel = t.closest('[data-tx-delete]');
-    if (txDel) { txConfirm = txDel.dataset.txDelete; route({ keepPlace: true, focus: '[data-tx-delete-yes]' }); return; }
-    if (t.closest('[data-tx-delete-no]')) { txConfirm = null; route({ keepPlace: true, focus: '[data-open-tx]' }); return; }
+    if (txDel) { txConfirm = txDel.dataset.txDelete; txModal = 'delete'; route({ keepPlace: true, focus: '[data-tx-delete-no]' }); return; }
+    if (t.closest('[data-tx-delete-no]')) { closeTxModal(); return; }
     const txYes = t.closest('[data-tx-delete-yes]');
-    if (txYes) { deleteTx(txYes.dataset.txDeleteYes); route({ keepPlace: true, focus: '[data-open-tx]' }); return; }
+    if (txYes) { txModal = null; deleteTx(txYes.dataset.txDeleteYes); route({ keepPlace: true, focus: '[data-open-tx]' }); return; }
     if (t.closest('[data-open-plan]')) { openPlan(null); route({ keepPlace: true, focus: '#plan-name' }); return; }
     const planEdit = t.closest('[data-plan-edit]');
     if (planEdit) {
@@ -3738,13 +3963,21 @@
     if (planOk) { deletePlan(planOk.dataset.planDeleteConfirm); planConfirm = null; route({ keepPlace: true, focus: '[data-open-plan]' }); return; }
     const planView = t.closest('[data-plan-view]');
     if (planView) { setWho(planView.dataset.planView); route(); return; }
+    if (t.closest('[data-tx-select-toggle]')) { txSelecting = !txSelecting; txSel = new Set(); txBulkConfirm = false; bulkError = ''; route({ keepPlace: true, focus: '[data-tx-select-toggle]' }); return; }
+    if (t.closest('[data-tx-all]')) { txSel = new Set(filteredTransactions().slice(0, TX_CAP).map((e) => e.key)); bulkError = ''; updateTxResults(); return; }
+    if (t.closest('[data-tx-none]')) { txSel = new Set(); bulkError = ''; updateTxResults(); return; }
+    const bulkBtn = t.closest('[data-bulk-apply]');
+    if (bulkBtn) { bulkApply(bulkBtn.dataset.bulkApply); return; }
+    if (t.closest('[data-bulk-delete]')) { txBulkConfirm = true; bulkError = ''; route({ keepPlace: true, focus: '[data-bulk-delete-yes]' }); return; }
+    if (t.closest('[data-bulk-delete-no]')) { txBulkConfirm = false; route({ keepPlace: true, focus: '[data-bulk-delete]' }); return; }
+    if (t.closest('[data-bulk-delete-yes]')) { bulkDelete(); return; }
     if (t.closest('[data-tx-clear]')) {
       txFilter = txFilterDefault();
       route({ keepPlace: true, focus: '#f-q' });
       return;
     }
     if (t.closest('[data-tool-cancel]')) {
-      const back = budgetPanel === 'goals' ? '[data-open-goals]' : budgetPanel === 'cats' ? '[data-open-cats]' : planPanel ? '[data-open-plan]' : '[data-open-tx]';
+      const back = budgetPanel === 'setup' ? '[data-open-setup]' : planPanel ? '[data-open-plan]' : '[data-open-tx]';
       resetBudgetTools(); route({ keepPlace: true, focus: back }); return;
     }
     const catDel = t.closest('[data-cat-delete]');
@@ -3834,7 +4067,7 @@
     else if (el.matches('[data-cat-name]') && catDraft) catDraft.names[el.dataset.catName] = el.value;
     else if (el.id === 'cat-new' && catDraft) catDraft.newName = el.value;
     else if (el.matches('[data-tx]') && txDraft && el.type !== 'checkbox') txDraft[el.dataset.tx] = el.value;
-    else if (el.matches('[data-txf]')) { txFilter[el.dataset.txf] = el.value; updateTxResults(); }
+    else if (el.matches('[data-txf]')) txFilterChanged(el.dataset.txf, el.value);
     else if (el.matches('[data-imp]') && imp) { imp[el.dataset.imp] = el.value; if (el.dataset.imp === 'bank') updateFloorText(); }
     else if (el.matches('[data-group-input]')) { if (!groupsDraft) groupsDraft = {}; groupsDraft[el.dataset.groupInput] = el.value; }
     else if (el.matches('[data-acct]') && acctDraft) {
@@ -3852,7 +4085,16 @@
     const el = event.target;
     if (el.id === 'restore-file') { handleRestoreFile(el.files && el.files[0]); return; }
     if (el.matches('[data-rule-cat]')) { setRule(el.dataset.ruleCat, el.value); route({ keepPlace: true, focus: `[data-rule-cat="${el.dataset.ruleCat}"]` }); return; }
-    if (el.matches('[data-txf]')) { txFilter[el.dataset.txf] = el.value; updateTxResults(); return; }
+    if (el.matches('[data-tx-check]')) {
+      const k = el.dataset.txCheck;
+      if (el.checked) txSel.add(k); else txSel.delete(k);
+      bulkError = '';
+      updateTxResults();
+      const again = document.querySelector(`[data-tx-check="${CSS.escape(k)}"]`);
+      if (again) again.focus({ preventScroll: true });
+      return;
+    }
+    if (el.matches('[data-txf]')) { txFilterChanged(el.dataset.txf, el.value); return; }
     if (el.id === 'imp-file' && imp) {
       const f = el.files && el.files[0];
       if (!f) { imp.text = ''; imp.fileName = ''; return; }
@@ -3905,12 +4147,12 @@
     if (event.target.matches('[data-restore-pw-form]')) { event.preventDefault(); handleRestorePassword(event.target); return; }
     if (event.target.matches('[data-goals-form]')) {
       event.preventDefault(); toolError = '';
-      if (goalsDraft && saveGoals()) { budgetPanel = null; goalsDraft = null; route({ keepPlace: true, focus: '[data-open-goals]' }); } else route({ keepPlace: true, focus: '.form-error' });
+      if (goalsDraft && saveGoals()) { budgetPanel = null; goalsDraft = null; route({ keepPlace: true, focus: '[data-open-setup]' }); } else route({ keepPlace: true, focus: '.form-error' });
       return;
     }
     if (event.target.matches('[data-cats-form]')) {
       event.preventDefault(); toolError = '';
-      if (catDraft && saveCategories()) route({ keepPlace: true, focus: '#cat-new' }); else route({ keepPlace: true, focus: '.form-error' });
+      if (catDraft && saveCategories()) route({ keepPlace: true, focus: '[data-open-setup]' }); else route({ keepPlace: true, focus: '.form-error' });
       return;
     }
     if (event.target.matches('[data-imp-setup]')) {
@@ -3941,9 +4183,10 @@
       if (planDraft && savePlan()) { planPanel = false; planDraft = null; planEditing = null; route({ keepPlace: true, focus: '[data-open-plan]' }); } else route({ keepPlace: true, focus: '.form-error' });
       return;
     }
+    if (event.target.matches('[data-rule-form]')) { event.preventDefault(); saveRuleEdit(event.target.dataset.ruleForm, event.target.querySelector('[data-rule-input]').value); return; }
     if (event.target.matches('[data-tx-form]')) {
       event.preventDefault(); toolError = '';
-      if (txDraft && saveTx()) { txDraft = null; route({ keepPlace: true, focus: '[data-open-tx]' }); } else route({ keepPlace: true, focus: '.form-error' });
+      if (txDraft && saveTx()) { txDraft = null; txModal = null; route({ keepPlace: true, focus: '[data-open-tx]' }); } else route({ keepPlace: true, focus: '.form-error' });
       return;
     }
     if (!event.target.matches('[data-member-form]')) return;
