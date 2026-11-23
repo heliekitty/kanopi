@@ -3,6 +3,10 @@
 Versions follow MAJOR.MINOR.PATCH. The current version lives in `version.js`.
 Each deployment gets a line here, newest first.
 
+## 1.8.0 - 2026-11-23
+
+- Transactions: "Just this one" checkbox on the transaction form. A checked transaction gets its category, but Kanopi does not save or change the store's keyword and does not fill past transactions.
+
 ## 1.7.0 - 2026-11-23
 
 - Portfolio > Composition: the portfolio value is hidden behind the same pile of leaves. Tap to show it, and it hides again when you leave the page.

@@ -2502,7 +2502,7 @@
       const idx = Number(String(d.editKey).slice(1));
       if (!D.expenses[idx]) { toolError = 'That transaction is no longer here.'; return false; }
       D.expenses[idx] = { daysAgo: daysBetween(parseDay(d.date), startOfToday()), name, type: sType, cat, amount: sAmount, paidBy: payerOf(d), owner: d.owner };
-      setRule(key, cat);
+      if (key) setRule(key, cat);
     } else {
       const old = records.find((r) => r.id === d.editKey && r.kind === 'expense' && !r.deleted);
       if (!old) { toolError = 'That transaction is no longer here.'; return false; }
@@ -2556,6 +2556,7 @@
         ${hasCategory(d.type) ? `<div class="field"><label for="tx-cat">Category</label>
           <select id="tx-cat" data-tx="cat">${cats}</select>
           <p class="muted tx-hint" id="tx-hint" aria-live="polite">${esc(d.hint)}</p></div>` : ''}
+        ${hasCategory(d.type) ? `<div class="field"><label class="tx-oneoff"><input type="checkbox" data-tx-oneoff${d.oneOff ? ' checked' : ''}> Just this one (don't remember this category for the store)</label></div>` : ''}
         ${hasCategory(d.type) ? (() => {
           const kw = d.keywordTouched ? d.keyword || '' : Store.vendorKey(d.name);
           const show = d.name.trim() && !knownStore(d.name);
@@ -2618,17 +2619,19 @@
 
     const cat = withCat ? d.cat : '';
     // A store Kanopi has not seen before: the keyword comes from the form, and past blanks get this category.
-    const newStore = withCat && cat && !knownStore(name);
+    const oneOff = withCat && !!d.oneOff;
+    const newStore = withCat && cat && !oneOff && !knownStore(name);
     let key = withCat ? Store.vendorKey(name) : '';
     if (newStore) {
       if (d.keywordTouched) key = Store.vendorKey(d.keyword || '');
       if (key.length < KEYWORD_MIN) { toolError = `Use at least ${KEYWORD_MIN} letters for the keyword.`; return false; }
     }
     const fills = newStore ? fillPastBlanks(key, cat, d.editKey) : [];
+    const ruleKey = oneOff ? '' : key;
     // Refunds are saved as expenses with a negative amount.
     const sType = d.type === 'refund' ? 'expense' : d.type;
     const sAmount = d.type === 'refund' ? -amount : amount;
-    if (d.editKey) return saveTxEdit(d, name, sAmount, cat, key, fills, sType);
+    if (d.editKey) return saveTxEdit(d, name, sAmount, cat, ruleKey, fills, sType);
     if (isSample()) {
       const when = parseDay(d.date);
       const item = { daysAgo: daysBetween(when, startOfToday()), name, type: sType, cat, amount: sAmount, paidBy: payerOf(d), owner: d.owner };
@@ -2640,11 +2643,11 @@
         const row = D.budget[d.owner][cat] || (D.budget[d.owner][cat] = [0, 0]);
         row[0] += spend;
       }
-      setRule(key, cat);
+      if (ruleKey) setRule(ruleKey, cat);
     } else {
       const rec = { id: newId('e'), kind: 'expense', updatedAt: Date.now(), date: d.date, name, type: sType, cat, amount: sAmount, paidBy: payerOf(d), owner: d.owner };
       const list = [rec];
-      if (key && cat) list.push({ id: Store.ruleId(key), kind: 'rule', updatedAt: Date.now(), vendor: key, cat });
+      if (ruleKey && cat) list.push({ id: Store.ruleId(ruleKey), kind: 'rule', updatedAt: Date.now(), vendor: ruleKey, cat });
       writeRecords(list.concat(fills));
       refreshData();
     }
@@ -4324,6 +4327,12 @@
     if (el.matches('[data-plan]') && planDraft) {
       planDraft[el.dataset.plan] = el.value;
       if (el.dataset.plan === 'kind') route({ keepPlace: true, focus: '#plan-kind' });
+      return;
+    }
+    if (el.matches('[data-tx-oneoff]') && txDraft) {
+      txDraft.oneOff = el.checked;
+      const field = document.getElementById('tx-keyword-field');
+      if (field) field.style.display = !el.checked && txDraft.name.trim() && !knownStore(txDraft.name) ? '' : 'none';
       return;
     }
     if (!el.matches('[data-tx]') || !txDraft) return;
