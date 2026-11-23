@@ -898,7 +898,7 @@
         : `<button type="button" class="text-link link-btn tick-btn" data-open-lots="${esc(p.ticker)}" aria-haspopup="dialog"><strong>${esc(p.ticker)}</strong></button><span class="cell-sub">${esc(p.name)}</span>`,
       together ? splitBar(p.byOwner, p.value) : esc(accountsText(p)),
       p.cash ? '—' : p.shares.toLocaleString('en-US'),
-      p.cash ? '—' : money2.format(p.price),
+      p.cash ? '—' : `${money2.format(p.price)}${priceNoteFor(p.ticker)}`,
       p.avg == null ? '—' : money2.format(p.avg),
       p.cost == null ? '—' : money.format(p.cost),
       money.format(p.value),
@@ -1159,6 +1159,7 @@
         ${pageTop(subnav(PORTFOLIO_LINKS, 'portfolio-performance'))}
         <div class="stack">
           ${card('perf-title', 'Returns', '<p class="muted">No holdings yet, so there are no returns to show.</p>', 'wide')}
+          ${benchCard()}
           ${closedCard()}
         </div>`;
     }
@@ -2885,6 +2886,95 @@
     dataNote = { text: `Added ${added} ${label}${isHold && r.same ? `, updated ${r.same}` : ''}${r.same && !isHold ? `, skipped ${r.same} already imported` : ''}.` };
   }
 
+  // ---- Prices from your Google Sheet
+
+  let priceMsg = '';
+
+  function priceNoteFor(ticker) {
+    const h = D.holdings.find((x) => x.ticker === ticker);
+    if (!h) return '';
+    if (h.priceSource !== 'sheet') return ' <span class="cell-sub">from import</span>';
+    if (!h.priceAsOf) return '';
+    return ` <span class="cell-sub">${h.priceStale ? 'stale, ' : ''}as of ${esc(formatDate(new Date(h.priceAsOf)))}</span>`;
+  }
+
+  function pricesCard() {
+    if (isSample()) return '<p class="muted">Set up your own data first (above). Live prices work with your data.</p>';
+    const ps = D.psheet || {};
+    const tickers = Array.from(new Set(D.holdings.filter((h) => h.ticker !== 'CASH').map((h) => h.ticker)));
+    const priced = new Set(D.holdings.filter((h) => h.priceSource === 'sheet').map((h) => h.ticker));
+    const missing = tickers.filter((t) => !priced.has(t));
+    const stale = Array.from(new Set(D.holdings.filter((h) => h.priceStale).map((h) => h.ticker)));
+    const status = ps.refreshedAt ? `Last refreshed ${new Date(ps.refreshedAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}.` : 'Not refreshed yet.';
+    return `
+      <form class="member-form" data-prices-form novalidate>
+        <div class="field"><label for="price-sheet">Price sheet link or ID</label>
+          <input id="price-sheet" type="text" autocomplete="off" value="${esc(ps.sheetId || '')}"></div>
+        <div class="field"><label for="price-tab">Prices tab name</label>
+          <input id="price-tab" type="text" autocomplete="off" value="${esc(ps.priceTab || 'Prices')}"></div>
+        <p class="muted">The tab needs Ticker and Price columns. TradeTime, Type, YTD Base and 1Y Base are optional.</p>
+        <div class="btn-row"><button type="submit" class="btn btn-primary">Save and refresh prices</button></div>
+      </form>
+      ${priceMsg ? `<p class="muted" role="status">${esc(priceMsg)}</p>` : ''}
+      <p class="muted">${esc(status)}${missing.length ? ` Not in the sheet, using the last import price: ${esc(missing.join(', '))}.` : ''}${stale.length ? ` Stale: ${esc(stale.join(', '))}.` : ''}</p>`;
+  }
+
+  async function refreshPrices(form) {
+    const raw = form.querySelector('#price-sheet').value.trim();
+    const tab = form.querySelector('#price-tab').value.trim() || 'Prices';
+    if (isSample()) { priceMsg = 'Set up your own data first, then add the price sheet.'; route({ keepPlace: true, focus: '#price-sheet' }); return; }
+    const m = raw.match(/\/spreadsheets\/d\/([A-Za-z0-9_-]+)/);
+    const id = m ? m[1] : raw;
+    if (!/^[A-Za-z0-9_-]{20,}$/.test(id)) { priceMsg = 'That does not look like a Google Sheet link or ID.'; route({ keepPlace: true, focus: '#price-sheet' }); return; }
+    let text = '';
+    try {
+      const res = await fetch(`https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tab)}`, { cache: 'no-store' });
+      if (!res.ok) throw new Error(String(res.status));
+      text = await res.text();
+    } catch (err) {
+      priceMsg = 'Could not reach the price sheet. Check that it is shared as "Anyone with the link" and that the tab name matches.';
+      route({ keepPlace: true, focus: '#price-sheet' }); return;
+    }
+    const parsed = KanopiImporter.parseCsv(text);
+    if (parsed.error) { priceMsg = 'The price sheet did not come through as a table. Check the tab name.'; route({ keepPlace: true, focus: '#price-sheet' }); return; }
+    const header = parsed.rows[0].map((c) => String(c).trim().toLowerCase());
+    const col = (name) => header.indexOf(name);
+    const iT = col('ticker'); const iP = col('price');
+    if (iT < 0 || iP < 0) { priceMsg = 'The Prices tab needs Ticker and Price columns.'; route({ keepPlace: true, focus: '#price-sheet' }); return; }
+    const iTT = col('tradetime'); const iTy = col('type'); const iYTD = col('ytd base'); const iY1 = col('1y base');
+    const now = Date.now();
+    const list = [];
+    parsed.rows.slice(1).forEach((r) => {
+      const t = String(r[iT] || '').trim().toUpperCase();
+      const price = KanopiSheets.parseAmount(r[iP]);
+      if (!t || price === null || !(price > 0)) return;
+      const tt = iTT >= 0 ? Date.parse(r[iTT]) : NaN;
+      const rec = Store.clean({
+        id: `q-${t.replace(/[^A-Z0-9]/g, '')}`, kind: 'quote', ticker: t, price,
+        asOf: Number.isFinite(tt) ? tt : 0, type: iTy >= 0 ? String(r[iTy] || '').trim() : '',
+        ytdBase: iYTD >= 0 ? (KanopiSheets.parseAmount(r[iYTD]) || 0) : 0,
+        yearAgo: iY1 >= 0 ? (KanopiSheets.parseAmount(r[iY1]) || 0) : 0,
+        updatedAt: now
+      });
+      if (rec) list.push(rec);
+    });
+    const ps = Store.clean({ id: 'psheet', kind: 'psheet', sheetId: id, priceTab: tab, refreshedAt: now, updatedAt: now });
+    writeRecords(list.concat([ps]));
+    refreshData();
+    priceMsg = `Updated ${list.length} price${list.length === 1 ? '' : 's'}.`;
+    route({ keepPlace: true, focus: '#price-sheet' });
+  }
+
+  function benchCard() {
+    const b = D.liveBenchmarks || {};
+    const keys = Object.keys(b);
+    if (!keys.length) return card('bench-title', 'Benchmarks', '<p class="muted">Add your price sheet under Settings > Data > Prices to see benchmark returns.</p>', 'wide');
+    const pct = (v) => (v == null ? '—' : signedPctText(v * 100));
+    const head = [{ t: 'Benchmark' }, { t: 'Price', num: true }, { t: 'Year to date', num: true }, { t: '1 year', num: true }, { t: 'As of' }];
+    const rows = keys.map((k) => [esc(k), money2.format(b[k].price), pct(b[k].ytd), pct(b[k].oneYear), b[k].asOf ? esc(formatDate(new Date(b[k].asOf))) : '—']);
+    return card('bench-title', 'Benchmarks', table('Benchmarks', head, rows) + '<p class="muted">Price returns from your price sheet. Dividends are not included.</p>', 'wide');
+  }
+
   function dataCard() {
     const field = (id, label, type, extra) => `
       <div class="field"><label for="${id}">${label}</label>
@@ -3115,6 +3205,7 @@
            ${editing === 'new' ? '' : `<div class="btn-row"><button type="button" class="btn" data-member-add ${full ? 'disabled' : ''}>Add a family member</button></div>`}
            <p class="muted">${full ? `Up to ${MAX_MEMBERS} members. ` : ''}New members start with no data. A member who has accounts, budget items or payments can't be deleted. Changes are saved on this device only until sync is built.</p>`)}
         ${card('data-title', 'Data', dataCard())}
+        ${card('prices-title', 'Prices', pricesCard())}
         ${card('sync-title', 'Sync',
           `<p class="row"><span>Method</span><span>Backup file shared through iCloud Drive</span></p>
            <p class="row"><span>Cadence</span><span>Monthly</span></p>
@@ -3647,6 +3738,7 @@
       if (!/^\d+$/.test(vals.appId)) { sheetsFormError = 'The project number is digits only.'; route({ keepPlace: true, focus: '.form-error' }); return; }
       saveSheetsSettings(vals); chooseSheet(); return;
     }
+    if (event.target.matches('[data-prices-form]')) { event.preventDefault(); refreshPrices(event.target); return; }
     if (event.target.matches('[data-export-form]')) { event.preventDefault(); handleExport(event.target); return; }
     if (event.target.matches('[data-restore-pw-form]')) { event.preventDefault(); handleRestorePassword(event.target); return; }
     if (event.target.matches('[data-goals-form]')) {

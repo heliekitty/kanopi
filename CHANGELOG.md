@@ -3,6 +3,14 @@
 Versions follow MAJOR.MINOR.PATCH. The current version lives in `version.js`.
 Each deployment gets a line here, newest first.
 
+## 1.2.0 - 2026-11-23
+
+- Settings > Data > Prices: connect your Google price sheet (link or ID and tab name), then Save and refresh prices. The sheet needs Ticker and Price columns. TradeTime, Type, YTD Base and 1Y Base are optional.
+- Holdings use the sheet price, so lot, position, and holding gains update. The Price column shows "as of" the trade date, "stale" when older than the last trading day, and "from import" when the sheet doesn't have the ticker.
+- Type comes from your label first, then the sheet's Type, then the import file.
+- Performance > Benchmarks: year-to-date and one-year price returns for SPY, DIA, QQQ and IWM, from the sheet. Dividends are not included.
+- Portfolio return from your own data is not calculated yet.
+
 ## 1.1.7 - 2026-11-22
 
 - Portfolio > Recent activity: filter by type, account, and date (last 30 days, last 12 months, this year). Sort by date, amount, type, account, or detail. Tap a column header to sort on wide screens; use Sort by on phones.

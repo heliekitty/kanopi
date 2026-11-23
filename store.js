@@ -10,6 +10,8 @@
 //   gorder   { names: [group names in the order you chose] }   id is always 'gorder'
 //   tgroup   { ticker, group }                                  the named group a ticker belongs to in Holdings
 //   hlabel   { account, ticker, type }                          your own type for a holding; imports never overwrite it
+//   quote    { ticker, price, asOf, type, ytdBase, yearAgo }   latest price from your price sheet (ms timestamp)
+//   psheet   { sheetId, priceTab, refreshedAt }                 where the price sheet lives
 //   pgroup   { account, ticker, group }                         your group for one position; overrides the ticker's group
 //   ptx      { date, type, ticker, qty, amount, account }      portfolio transaction
 //   expense  { date, name, type, cat, amount, paidBy, owner } type: expense | refund | income | transfer
@@ -20,7 +22,7 @@
 
   const DB_NAME = 'kanopi';
   const DB_VERSION = 1;
-  const KINDS = ['member', 'account', 'holding', 'ptx', 'expense', 'bill', 'budget', 'category', 'rule', 'plan', 'tgroup', 'hlabel', 'pgroup', 'gorder', 'fmt'];
+  const KINDS = ['member', 'account', 'holding', 'ptx', 'expense', 'bill', 'budget', 'category', 'rule', 'plan', 'tgroup', 'hlabel', 'pgroup', 'quote', 'psheet', 'gorder', 'fmt'];
   const DATA_KINDS = KINDS.filter((k) => k !== 'member');
   const MAX_RECORDS = 50000;
   const MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -170,6 +172,10 @@
         return { ...base, ticker: str(r.ticker, 16), group: str(r.group, 30) };
       case 'holding':
         return { ...base, account: str(r.account, 64), ticker: str(r.ticker, 16), name: str(r.name), type: str(r.type, 40), shares: num(r.shares), price: num(r.price), cost: r.cost === null || r.cost === undefined || r.cost === '' ? null : num(r.cost), acquired: dateStr(r.acquired) };
+      case 'quote':
+        return { ...base, ticker: str(r.ticker, 16), price: num(r.price), asOf: num(r.asOf), type: str(r.type, 40), ytdBase: num(r.ytdBase), yearAgo: num(r.yearAgo) };
+      case 'psheet':
+        return { ...base, sheetId: str(r.sheetId, 120), priceTab: str(r.priceTab, 40), refreshedAt: num(r.refreshedAt) };
       case 'pgroup':
         return { ...base, account: str(r.account, 64), ticker: str(r.ticker, 16), group: str(r.group, 30) };
       case 'hlabel':
@@ -357,8 +363,43 @@
       else balances[owner].liabilities += -a.balance;
     });
 
+    // Latest prices from the price sheet. A price is stale if it is older than the last trading day.
+    const quotes = {};
+    of('quote').forEach((q) => { if (q.ticker && q.price > 0) quotes[q.ticker.toUpperCase()] = q; });
+    const isStale = (asOf) => {
+      if (!asOf) return true;
+      const d = new Date(asOf); d.setHours(0, 0, 0, 0);
+      const prev = new Date(today); prev.setDate(prev.getDate() - 1);
+      while (prev.getDay() === 0 || prev.getDay() === 6) prev.setDate(prev.getDate() - 1);
+      return d < prev;
+    };
     const holdings = of('holding').filter((h) => accounts[h.account])
-      .map((h) => ({ ticker: h.ticker, name: h.name, fileType: h.type || 'Other', type: typeLabels[`${h.account}|${h.ticker}`] || h.type || 'Other', account: h.account, shares: h.shares, price: h.price, cost: h.cost == null ? undefined : h.cost, acquired: h.acquired || undefined }));
+      .map((h) => {
+        const q = quotes[String(h.ticker).toUpperCase()];
+        return {
+          ticker: h.ticker, name: h.name, fileType: h.type || 'Other',
+          type: typeLabels[`${h.account}|${h.ticker}`] || (q && q.type) || h.type || 'Other',
+          account: h.account, shares: h.shares,
+          price: q ? q.price : h.price,
+          priceSource: q ? 'sheet' : 'import',
+          priceAsOf: q ? q.asOf : undefined,
+          priceStale: q ? isStale(q.asOf) : false,
+          cost: h.cost == null ? undefined : h.cost, acquired: h.acquired || undefined
+        };
+      });
+
+    const liveBenchmarks = {};
+    ['SPY', 'DIA', 'QQQ', 'IWM'].forEach((t) => {
+      const q = quotes[t];
+      if (!q) return;
+      liveBenchmarks[t] = {
+        price: q.price, asOf: q.asOf,
+        ytd: q.ytdBase > 0 ? q.price / q.ytdBase - 1 : null,
+        oneYear: q.yearAgo > 0 ? q.price / q.yearAgo - 1 : null
+      };
+    });
+    const psheetRec = of('psheet')[0];
+    const psheet = psheetRec ? { sheetId: psheetRec.sheetId, priceTab: psheetRec.priceTab, refreshedAt: psheetRec.refreshedAt } : null;
 
     const transactions = of('ptx').filter((t) => accounts[t.account] && t.date)
       .map((t) => ({ date: t.date, daysAgo: daysBetween(parseDay(t.date), today), type: t.type || 'Buy', ticker: t.ticker, qty: t.qty || undefined, amount: t.amount, account: t.account }));
@@ -464,6 +505,8 @@
       accounts,
       ownerLabels: {},
       holdings,
+      liveBenchmarks,
+      psheet,
       transactions,
       periods: sample.periods,
       perf: { portfolio: {}, benchmarks: sample.perf.benchmarks },
