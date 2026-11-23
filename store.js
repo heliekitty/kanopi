@@ -14,7 +14,7 @@
 //   psheet   { sheetId, priceTab, refreshedAt }                 where the price sheet lives
 //   pgroup   { account, ticker, group }                         your group for one position; overrides the ticker's group
 //   ptx      { date, type, ticker, qty, amount, account }      portfolio transaction
-//   expense  { date, name, type, cat, amount, paidBy, owner } type: expense | refund | income | transfer
+//   expense  { date, name, type, cat, amount, paidBy, owner } type: expense | income | transfer. A refund is an expense with a negative amount.
 //   bill     { name, amount, day, owner }                      day of month, 1 to 28
 //   budget   { owner, cat, limit }                             monthly limit
 (function (root) {
@@ -22,7 +22,7 @@
 
   const DB_NAME = 'kanopi';
   const DB_VERSION = 1;
-  const KINDS = ['member', 'account', 'holding', 'ptx', 'expense', 'bill', 'budget', 'category', 'rule', 'plan', 'tgroup', 'hlabel', 'pgroup', 'quote', 'psheet', 'hist', 'gorder', 'fmt'];
+  const KINDS = ['member', 'account', 'holding', 'ptx', 'expense', 'bill', 'budget', 'category', 'rule', 'plan', 'tgroup', 'hlabel', 'pgroup', 'quote', 'psheet', 'hist', 'gorder', 'fmt', 'trip'];
   const DATA_KINDS = KINDS.filter((k) => k !== 'member');
   const MAX_RECORDS = 50000;
   const MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -143,8 +143,8 @@
     return Math.round((Number(amount) || 0) * count * 100) / 100;
   }
 
-  // Spending effect of a transaction: expenses add, refunds subtract, income and transfers are not spending.
-  const spendOf = (e) => (e.type === 'refund' ? -e.amount : (!e.type || e.type === 'expense') ? e.amount : 0);
+  // Spending effect of a transaction: expenses add (a refund is an expense with a negative amount), income and transfers are not spending.
+  const spendOf = (e) => ((!e.type || e.type === 'expense') ? e.amount : 0);
 
   function cleanRecord(r) {
     if (!r || typeof r !== 'object') return null;
@@ -185,7 +185,8 @@
       case 'ptx':
         return { ...base, date: dateStr(r.date), type: str(r.type, 40), ticker: str(r.ticker, 16), qty: num(r.qty), amount: num(r.amount), account: str(r.account, 64) };
       case 'expense':
-        return { ...base, date: dateStr(r.date), name: str(r.name), type: TX_TYPES.indexOf(r.type) !== -1 ? r.type : 'expense', cat: str(r.cat, 40), amount: num(r.amount), paidBy: str(r.paidBy, 64), owner: str(r.owner, 64), src: str(r.src, 120) };
+        // Older saves stored refunds as type 'refund' with a positive amount. They load as expenses with a negative amount.
+        return { ...base, date: dateStr(r.date), name: str(r.name), type: r.type === 'refund' ? 'expense' : (['expense', 'income', 'transfer'].indexOf(r.type) !== -1 ? r.type : 'expense'), cat: str(r.cat, 40), amount: r.type === 'refund' ? -Math.abs(num(r.amount)) : num(r.amount), paidBy: str(r.paidBy, 64), owner: str(r.owner, 64), src: str(r.src, 120) };
       case 'bill':
         return { ...base, name: str(r.name), amount: num(r.amount), day: Math.min(28, Math.max(1, Math.round(num(r.day)) || 1)), owner: str(r.owner, 64) };
       case 'budget':
@@ -196,6 +197,8 @@
         return { ...base, vendor: str(r.vendor, 40), cat: str(r.cat, 40) };
       case 'plan':
         return { ...base, flow: r.flow === 'income' ? 'income' : 'expense', owner: str(r.owner, 64), cat: str(r.cat, 40), name: str(r.name, 60), freq: FREQ_KEYS.indexOf(r.freq) !== -1 ? r.freq : 'monthly', amount: num(r.amount), sub: r.flow === 'income' ? '' : (r.sub === 'yes' || r.sub === 'no' ? r.sub : ''), due: dateStr(r.due), incomeType: r.flow === 'income' ? str(r.incomeType, 20) : '' };
+      case 'trip':
+        return { ...base, name: str(r.name, 60), saved: num(r.saved), target: num(r.target), targetDate: dateStr(r.targetDate) };
       default:
         return null;
     }
@@ -507,9 +510,14 @@
       }
     };
 
+    const tripRec = of('trip').find((t) => t.id === 'trip');
+    const trip = tripRec
+      ? { name: tripRec.name, saved: tripRec.saved, target: tripRec.target, targetDate: tripRec.targetDate }
+      : { name: 'Trip name TBD', saved: 0, target: 0, targetDate: '' };
+
     return {
       balances,
-      trip: { name: 'Trip name TBD', saved: 0, target: 0, targetDate: 'Target date TBD' },
+      trip,
       categories,
       rules,
       tgroups,

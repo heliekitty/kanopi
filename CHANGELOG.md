@@ -3,6 +3,17 @@
 Versions follow MAJOR.MINOR.PATCH. The current version lives in `version.js`.
 Each deployment gets a line here, newest first.
 
+## 1.5.0 - 2026-11-23
+
+- Budget > This month by category: the total leaves are one color each, from green through yellow, orange, and red, one leaf per 10% of budget. Going over budget keeps the colored leaves and adds a brown leaf for each full 10% over. The poop leaves are gone from this card.
+- Home > Goal card: tap the card to set the goal title, target amount, saved amount, and target date. The card reads "Goal towards [title]". Stored on this device only.
+- Phones: the Settings icon in the top-right corner is hidden. Settings stays in the bottom menu.
+- Family menu: "Manage family" is now a text link.
+- Portfolio icon: the bamboo is shaded like the leaf and honeycomb icons.
+- Transactions: expenses show in red with parentheses, e.g. ($86). Refunds and income show as positive amounts.
+- New stores: when you save a transaction with a category for a store Kanopi hasn't seen, a dialog confirms the keyword first (defaults to the cleaned store name, at least 3 letters). Saving it fills in the category on past matching transactions that have none. Existing categories are not changed.
+- Refunds are saved as expenses with a negative amount. Refunds saved in earlier versions, and card refunds from imports, are converted automatically.
+
 ## 1.4.0 - 2026-11-23
 
 - Budget > Transactions: tap Edit or Delete to open a dialog instead of expanding the row. Actions sit in the lower right on phones.

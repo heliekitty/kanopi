@@ -296,6 +296,20 @@
               aria-valuemin="0" aria-valuemax="100" aria-valuenow="${p}"${over ? ' aria-valuetext="Over budget"' : ''}>${leaves}</div>`;
   }
 
+  // Category budget meter: ten leaves, one per 10% of budget. Each leaf has its own color, from green through yellow, orange and red.
+  // Going over budget keeps the colored leaves and adds a brown leaf for every full 10% over, on a row below.
+  const BUDGET_LEAF_COLORS = ['#2E9E76', '#4C9A4A', '#7A9A2E', '#9A9020', '#AD8100', '#D2741A', '#D0581E', '#C9432A', '#B83228', '#9E2424'];
+  function budgetLeaves(label, pct) {
+    const filled = Math.min(10, Math.round(clampPct(pct) / 10));
+    const brownCount = pct > 100 ? Math.floor((pct - 100) / 10) : 0;
+    const colored = Array.from({ length: 10 }, (_, i) => (i < filled
+      ? `<svg class="leaf on" style="fill:${BUDGET_LEAF_COLORS[i]};stroke:${BUDGET_LEAF_COLORS[i]}" viewBox="0 0 24 24" aria-hidden="true"><path d="${LEAF_PATH}"></path></svg>`
+      : `<svg class="leaf off" viewBox="0 0 24 24" aria-hidden="true"><path d="${LEAF_PATH}"></path></svg>`)).join('');
+    const brown = Array.from({ length: brownCount }, () => `<svg class="leaf brown" viewBox="0 0 24 24" aria-hidden="true"><path d="${LEAF_PATH}"></path></svg>`).join('');
+    return `<div class="leaves${brownCount ? ' over' : ''}" role="progressbar" aria-label="${esc(label)}"
+              aria-valuemin="0" aria-valuemax="100" aria-valuenow="${clampPct(pct)}"${pct > 100 ? ` aria-valuetext="Over budget by ${Math.round(pct - 100)}%"` : ''}>${colored}</div>${brownCount ? `<div class="leaves-brown">${brown}</div>` : ''}`;
+  }
+
   // Decorative tree on the net worth card.
   function treeSvg() {
     return `<svg class="tree" viewBox="0 0 128 128" aria-hidden="true" focusable="false"><path fill="#1F7A5A" d="M32 24.66s2.43-7.3 8.16-11.88s58.85 15.04 58.85 15.04s9.28 3.31 14.77 12.08c3.69 5.9 5.75 14.62 1.84 25.15c-9.32 25.08-33.5 22.18-39.8 20.75c-2.96-.67-10.17-2.58-10.17-2.58s-16.47 13.6-36.29 3.17c-15.09-7.94-13.22-19.81-13.22-19.81S5.98 56.42 10.38 42.27C15.68 25.23 32 24.66 32 24.66"/><path fill="#2E9E76" d="M66.37 55.01c13.75-2.29 18.04-8.16 21.77-13.6c4.11-6 3.01-11.03 5.87-11.17s5.14 5.02 2 14.03c-4.44 12.74-13.57 14.61-13.75 18.04c-.14 2.72 9.72 2.91 18.62-1.43c12.89-6.3 12.89-21.05 12.89-21.05s-2.29-4.73-6.73-8.02s-7.74-5.01-7.74-5.01S94 6.9 69.95 3.6S36.01 17.07 36.01 17.07s.86 5.44 5.01 11.74c3.31 5.03 6.73 4.87 6.44 7.73c-.19 1.86-6.16 2.43-12.46-.29c-5.74-2.48-7.16-5.87-8.73-5.87S11.68 37.63 17.11 53c4.3 12.17 18.51 14.45 21.05 14.89c7.45 1.29 11.74-3.58 6.44-7.45s-11.17-6.16-9.88-10.02c1.39-4.18 6.35.18 12.31 2.76c5.89 2.55 13.02 2.89 19.34 1.83"/><path fill="#5E4429" d="M39.03 70.97s3.3-.19 4.66-.58s3.2-1.55 3.2-1.55S59.64 82.18 60.96 83.3c1.29 1.09 2.81-15.53 2.81-15.53s2.91.45 5.63.02c3.58-.57 6.02-1.71 6.02-1.71S73.68 76.31 73 80.19c-.43 2.49-.58 9.41-.58 9.41l-9.32 7.76l-7.09-4.76s-.02-1.87-1.07-3.14c-3.26-3.94-15.91-18.49-15.91-18.49m32.51 22.81l7.09-8.54s2.52.19 4.37.19c1.84 0 5.05-.39 5.05-.39s-5.82 7.86-8.93 11.74s-7.18 8.74-7.18 8.74l-3.88-11.26z"/><path fill="#7A5A3C" d="M66.5 86.98c-2.9.26-10.48 5.63-10.48 5.63s.39 9.12.1 14.27s-2.32 13.56-.45 15.69c1.62 1.84 15.24 2.19 17.27.05c2.04-2.14.06-10.98.06-16.71s-.58-16.31-.58-16.31s-2.62-2.91-5.92-2.62"/></svg>`;
@@ -533,7 +547,7 @@
         ${whoIcon(who)}
         <svg class="who-chev" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M4 6l4 4 4-4"/></svg>
       </button>
-      <ul class="who-list" id="who-list" role="menu" aria-label="Show finances for" hidden>${items}<li role="none"><button type="button" class="who-item who-manage" role="menuitem" data-manage-family>Manage family members</button></li></ul>`;
+      <ul class="who-list" id="who-list" role="menu" aria-label="Show finances for" hidden>${items}<li role="none" class="who-manage"><a href="#preferences" class="text-link who-manage-link" role="menuitem" data-manage-family>Manage family</a></li></ul>`;
   }
 
   function closeWhoMenu(returnFocus) {
@@ -556,6 +570,7 @@
         return;
       }
       if (event.target.closest('[data-manage-family]')) {
+        event.preventDefault();
         closeWhoMenu(false); resetFamilyEditing(); familyPanel = true;
         route({ keepPlace: true, focus: '[data-family-close]' }); return;
       }
@@ -648,12 +663,12 @@
           ${treeSvg()}
         </section>
 
-        <section class="card" aria-labelledby="trip-title">
-          <h2 id="trip-title" class="card-label">Trip goal</h2>
-          <p class="row"><span>${esc(D.trip.name)}</span><span>${clampPct(tripPct)}%</span></p>
-          ${leafMeter('Trip goal progress', tripPct)}
-          <p class="muted">${money.format(D.trip.saved)} saved of ${money.format(D.trip.target)} · ${esc(D.trip.targetDate)}</p>
-        </section>
+        <button type="button" class="card trip-card" data-open-trip>
+          <span id="trip-title" class="card-label">Goal towards ${esc(D.trip.name)}</span>
+          <p class="row"><span>Progress</span><span>${clampPct(tripPct)}%</span></p>
+          ${leafMeter('Goal progress', tripPct)}
+          <span class="muted trip-line">${money.format(D.trip.saved)} saved of ${money.format(D.trip.target)}${D.trip.targetDate ? ' · ' + esc(D.trip.targetDate) : ''}</span>
+        </button>
 
         <section class="card" aria-labelledby="budget-title">
           <h2 id="budget-title" class="card-label">Budget this month</h2>
@@ -1484,7 +1499,7 @@
       <div class="stack">
         ${card('bud-title', 'This month by category',
           `<p class="row"><span>${esc(monthLabel())}</span><span>${money.format(totals.spent)} of ${money.format(totals.budget)}</span></p>`
-          + leafMeter('Total budget spent', pctOf(totals.spent, totals.budget), totalOver)
+          + budgetLeaves('Total budget spent', pctOf(totals.spent, totals.budget))
           + (totalOver ? `<p class="over-note">Over budget by ${money.format(totals.spent - totals.budget)}</p>` : '')
           + bars(meterRows, 'Spending against budget by category', { max: 100, meter: true }), 'wide')}
         ${card('bills-title', 'Upcoming bills', billList + '<p class="muted"><a class="text-link" href="#payments">See all upcoming payments</a></p>')}
@@ -1507,11 +1522,13 @@
   let txFilter = txFilterDefault();
   const filtersActive = () => Object.keys(txFilter).some((k) => txFilter[k] !== txFilterDefault()[k]);
 
-  const typeOf = (e) => e.type || 'expense';
+  // A refund is stored as an expense with a negative amount; the grid and filters still call it a refund.
+  const typeOf = (e) => (e.type === 'expense' && e.amount < 0 ? 'refund' : (e.type || 'expense'));
 
-  // Amount as shown in the grid: refunds carry the opposite sign of an expense.
+  // Amount as shown in the grid: expenses are money out, so they sit in parentheses. Refunds and income are shown as positive.
   function txAmount(e) {
-    return typeOf(e) === 'refund' ? `(${fmt(e.amount)})` : fmt(e.amount);
+    if (typeOf(e) === 'refund') return fmt(Math.abs(e.amount));
+    return typeOf(e) === 'expense' ? `(${fmt(e.amount)})` : fmt(e.amount);
   }
 
   function filteredTransactions() {
@@ -1610,7 +1627,11 @@
       ? (e) => (hasCategory(e.type) ? { cat: val } : null)
       : kind === 'owner'
         ? (e) => ({ owner: val, paidBy: val !== 'shared' ? val : e.paidBy })
-        : (e) => ({ type: val, cat: hasCategory(val) ? e.cat : '' });
+        : (e) => {
+          // Choosing Refund stores the amount as negative; choosing anything else makes it positive.
+          const mag = Math.abs(e.amount);
+          return { type: val === 'refund' ? 'expense' : val, amount: val === 'refund' ? -mag : mag, cat: hasCategory(val) ? e.cat : '' };
+        };
     const changes = [];
     let skipped = 0;
     txSel.forEach((key) => {
@@ -1903,6 +1924,84 @@
           (subRows.length ? table('Planned subscriptions', SUB_HEAD, subRows, true) : '<p class="muted">No subscriptions yet. Use Add an item and choose Subscription.</p>')
           + (subRows.length ? '<p class="muted">A subscription marked No is cancelled. It stays on the list but is left out of the totals, the chart and the budget goals.</p>' : ''), 'wide')}
       </div>`;
+  }
+
+  // The goal modal (Home > Goal card). Title, target, saved amount and target date.
+  let tripPanel = false;
+  let tripDraft = null;
+  let tripError = '';
+
+  function openTrip() {
+    tripPanel = true;
+    tripError = '';
+    tripDraft = {
+      name: D.trip.name,
+      target: D.trip.target ? String(D.trip.target) : '',
+      saved: D.trip.saved ? String(D.trip.saved) : '',
+      targetDate: /^\d{4}-\d{2}-\d{2}$/.test(D.trip.targetDate) ? D.trip.targetDate : ''
+    };
+  }
+
+  function closeTrip() {
+    tripPanel = false;
+    tripDraft = null;
+    tripError = '';
+  }
+
+  function saveTrip() {
+    const d = tripDraft;
+    const name = d.name.trim().replace(/\s+/g, ' ');
+    const target = round2(toDollars(d.target));
+    const saved = d.saved.trim() === '' ? 0 : round2(toDollars(d.saved));
+    let err = '';
+    if (!name) err = 'Enter a goal title.';
+    else if (!d.target.trim() || !Number.isFinite(target) || target <= 0 || target > 10000000) err = 'Enter a target amount above $0.';
+    else if (!Number.isFinite(saved) || saved < 0 || saved > 10000000) err = 'Enter the amount saved so far, or leave it empty.';
+    else if (d.targetDate && !/^\d{4}-\d{2}-\d{2}$/.test(d.targetDate)) err = 'Pick a valid target date, or leave it empty.';
+    if (err) { tripError = err; return false; }
+    writeRecords([{ id: 'trip', kind: 'trip', updatedAt: Date.now(), name, target, saved, targetDate: d.targetDate }]);
+    refreshData();
+    return true;
+  }
+
+  function tripForm() {
+    const d = tripDraft;
+    return `
+      <form class="member-form" data-trip-form novalidate>
+        <div class="field"><label for="trip-name">Goal title</label>
+          <input id="trip-name" type="text" maxlength="60" autocomplete="off" data-trip="name" value="${esc(d.name)}"></div>
+        <div class="field"><label for="trip-target">Target amount</label>
+          <span class="money-input"><span aria-hidden="true">$</span><input id="trip-target" type="text" inputmode="decimal" autocomplete="off" data-trip="target" value="${esc(d.target)}" placeholder="0.00"></span></div>
+        <div class="field"><label for="trip-saved">Saved amount</label>
+          <span class="money-input"><span aria-hidden="true">$</span><input id="trip-saved" type="text" inputmode="decimal" autocomplete="off" data-trip="saved" value="${esc(d.saved)}" placeholder="0.00"></span></div>
+        <div class="field"><label for="trip-date">Target date</label>
+          <input id="trip-date" type="date" data-trip="targetDate" value="${esc(d.targetDate)}"></div>
+        ${tripError ? `<p class="form-error" role="alert">${esc(tripError)}</p>` : ''}
+        ${sampleNote()}
+        <div class="btn-row">
+          <button type="submit" class="btn btn-primary">Save goal</button>
+          <button type="button" class="btn" data-trip-cancel>Cancel</button>
+        </div>
+      </form>`;
+  }
+
+  // Rebuilt on every page draw, like the planner dialog.
+  function syncTripDialog(opts) {
+    document.querySelectorAll('#trip-dialog').forEach((el) => el.remove());
+    if (!tripPanel || !tripDraft) return;
+    const dlg = document.createElement('dialog');
+    dlg.id = 'trip-dialog';
+    dlg.className = 'modal';
+    dlg.setAttribute('aria-labelledby', 'trip-form-title');
+    dlg.innerHTML = `<div class="modal-head"><h2 id="trip-form-title" class="card-label">Set your goal</h2></div><div class="modal-body">${tripForm()}</div>`;
+    dlg.addEventListener('close', () => {
+      if (tripPanel) { closeTrip(); route({ keepPlace: true, focus: '[data-open-trip]' }); }
+    });
+    view.appendChild(dlg);
+    dlg.showModal();
+    const want = opts && opts.focus ? dlg.querySelector(opts.focus) : null;
+    const first = want || dlg.querySelector('#trip-name');
+    if (first) first.focus({ preventScroll: true });
   }
 
   function openPlan(item) {
@@ -2325,7 +2424,7 @@
     if (!e) return;
     resetBudgetTools();
     txDraft = {
-      type: e.type, date: isoDay(e.date), name: e.name, amount: Number(e.amount).toFixed(2), cat: e.cat || '', catTouched: true,
+      type: typeOf(e), date: isoDay(e.date), name: e.name, amount: Math.abs(Number(e.amount)).toFixed(2), cat: e.cat || '', catTouched: true,
       paidBy: e.paidBy, owner: e.owner, hint: '', editKey: key
     };
   }
@@ -2373,18 +2472,18 @@
     toolNote = `Deleted ${e.name}.`;
   }
 
-  function saveTxEdit(d, name, amount, cat, key) {
+  function saveTxEdit(d, name, sAmount, cat, key, fills, sType) {
     if (isSample()) {
       const idx = Number(String(d.editKey).slice(1));
       if (!D.expenses[idx]) { toolError = 'That transaction is no longer here.'; return false; }
-      D.expenses[idx] = { daysAgo: daysBetween(parseDay(d.date), startOfToday()), name, type: d.type, cat, amount, paidBy: payerOf(d), owner: d.owner };
+      D.expenses[idx] = { daysAgo: daysBetween(parseDay(d.date), startOfToday()), name, type: sType, cat, amount: sAmount, paidBy: payerOf(d), owner: d.owner };
       setRule(key, cat);
     } else {
       const old = records.find((r) => r.id === d.editKey && r.kind === 'expense' && !r.deleted);
       if (!old) { toolError = 'That transaction is no longer here.'; return false; }
-      const list = [{ ...old, updatedAt: Date.now(), date: d.date, name, type: d.type, cat, amount, paidBy: payerOf(d), owner: d.owner }];
+      const list = [{ ...old, updatedAt: Date.now(), date: d.date, name, type: sType, cat, amount: sAmount, paidBy: payerOf(d), owner: d.owner }];
       if (key && cat) list.push({ id: Store.ruleId(key), kind: 'rule', updatedAt: Date.now(), vendor: key, cat });
-      writeRecords(list);
+      writeRecords(list.concat(fills || []));
       refreshData();
     }
     toolNote = `Saved changes to ${name}.`;
@@ -2485,12 +2584,21 @@
     else if (withCat && d.cat && !D.categories[d.cat]) err = 'Choose a category from the list.';
     if (err) { toolError = err; return false; }
 
-    const key = withCat ? Store.vendorKey(name) : '';
     const cat = withCat ? d.cat : '';
-    if (d.editKey) return saveTxEdit(d, name, amount, cat, key);
+    // A store Kanopi has not seen before: confirm its keyword first (see the keyword dialog).
+    if (withCat && cat && !d.keywordChosen && !knownStore(name)) {
+      keywordDraft = { keyword: Store.vendorKey(name), cat, error: '' };
+      return false;
+    }
+    const key = withCat ? (d.keywordChosen || Store.vendorKey(name)) : '';
+    const fills = d.keywordChosen && cat ? fillPastBlanks(key, cat, d.editKey) : [];
+    // Refunds are saved as expenses with a negative amount.
+    const sType = d.type === 'refund' ? 'expense' : d.type;
+    const sAmount = d.type === 'refund' ? -amount : amount;
+    if (d.editKey) return saveTxEdit(d, name, sAmount, cat, key, fills, sType);
     if (isSample()) {
       const when = parseDay(d.date);
-      const item = { daysAgo: daysBetween(when, startOfToday()), name, type: d.type, cat, amount, paidBy: payerOf(d), owner: d.owner };
+      const item = { daysAgo: daysBetween(when, startOfToday()), name, type: sType, cat, amount: sAmount, paidBy: payerOf(d), owner: d.owner };
       D.expenses.push(item);
       const today = startOfToday();
       const spend = Store.spendOf(item);
@@ -2501,14 +2609,80 @@
       }
       setRule(key, cat);
     } else {
-      const rec = { id: newId('e'), kind: 'expense', updatedAt: Date.now(), date: d.date, name, type: d.type, cat, amount, paidBy: payerOf(d), owner: d.owner };
+      const rec = { id: newId('e'), kind: 'expense', updatedAt: Date.now(), date: d.date, name, type: sType, cat, amount: sAmount, paidBy: payerOf(d), owner: d.owner };
       const list = [rec];
       if (key && cat) list.push({ id: Store.ruleId(key), kind: 'rule', updatedAt: Date.now(), vendor: key, cat });
-      writeRecords(list);
+      writeRecords(list.concat(fills));
       refreshData();
     }
     toolNote = `Added $${amount.toFixed(2)} ${TYPE_LABEL[d.type].toLowerCase()}: ${name}.`;
     return true;
+  }
+
+  // ---- New store keyword: confirm before saving, then fill in past transactions with no category
+
+  let keywordDraft = null; // { keyword, cat, error } while the confirm dialog is open
+  const KEYWORD_MIN = 3;
+
+  const knownStore = (name) => !!(D.rules && Store.ruleMatch(name, D.rules));
+
+  // Past expenses and refunds whose name the keyword matches. In sample mode, the index points into D.expenses.
+  function matchingPast(key) {
+    const rules = { [key]: '' };
+    const hit = (name, type) => (type === 'expense' || type === 'refund' || !type) && Store.ruleMatch(name, rules) === key;
+    const src = isSample()
+      ? D.expenses.map((e, i) => ({ i, name: e.name, cat: e.cat, type: e.type }))
+      : records.filter((r) => r.kind === 'expense' && !r.deleted).map((r) => ({ r, name: r.name, cat: r.cat, type: r.type }));
+    return src.filter((x) => hit(x.name, x.type));
+  }
+
+  // Fills in the category only where it is blank. Existing categories are never overwritten.
+  // Returns records to save (real data), or applies the change directly (sample data).
+  function fillPastBlanks(key, cat, editKey) {
+    const blanks = matchingPast(key).filter((x) => !x.cat && (isSample() || x.r.id !== editKey));
+    if (isSample()) { blanks.forEach((x) => { D.expenses[x.i].cat = cat; }); return []; }
+    return blanks.map((x) => ({ ...x.r, updatedAt: Date.now(), cat }));
+  }
+
+  function keywordCountText(key) {
+    const hits = matchingPast(key);
+    const blank = hits.filter((x) => !x.cat).length;
+    const filled = hits.length - blank;
+    return `Fills in ${blank} past transaction${blank === 1 ? '' : 's'} with no category.${filled ? ` ${filled} already ${filled === 1 ? 'has' : 'have'} a category and stay${filled === 1 ? 's' : ''} as they are.` : ''}`;
+  }
+
+  function syncKeywordDialog(opts) {
+    document.querySelectorAll('#keyword-dialog').forEach((el) => el.remove());
+    if (!keywordDraft || !txDraft) return;
+    const kd = keywordDraft;
+    const dlg = document.createElement('dialog');
+    dlg.id = 'keyword-dialog';
+    dlg.className = 'modal';
+    dlg.setAttribute('aria-labelledby', 'keyword-title');
+    dlg.innerHTML = `<div class="modal-head"><h2 id="keyword-title" class="card-label">Confirm the keyword</h2></div>
+      <div class="modal-body"><form class="member-form" data-keyword-form novalidate>
+        <p>Kanopi will use this keyword to fill in <strong>${esc(D.categories[kd.cat] || kd.cat)}</strong> for matching transactions.</p>
+        <div class="field"><label for="keyword-input">Keyword</label>
+          <input id="keyword-input" type="text" maxlength="40" autocomplete="off" data-keyword-input value="${esc(kd.keyword)}"></div>
+        <p class="muted" id="keyword-count" aria-live="polite">${esc(keywordCountText(kd.keyword))}</p>
+        ${kd.error ? `<p class="form-error" role="alert">${esc(kd.error)}</p>` : ''}
+        <div class="btn-row">
+          <button type="submit" class="btn btn-primary">Save keyword</button>
+          <button type="button" class="btn" data-keyword-cancel>Cancel</button>
+        </div>
+      </form></div>`;
+    dlg.querySelector('[data-keyword-input]').addEventListener('input', (e) => {
+      const count = dlg.querySelector('#keyword-count');
+      if (count) count.textContent = keywordCountText(Store.vendorKey(e.target.value));
+    });
+    dlg.addEventListener('close', () => {
+      if (keywordDraft) { keywordDraft = null; route({ keepPlace: true, focus: '[data-tx-form] [type=submit]' }); }
+    });
+    view.appendChild(dlg);
+    dlg.showModal();
+    const want = opts && opts.focus ? dlg.querySelector(opts.focus) : null;
+    const first = want || dlg.querySelector('#keyword-input');
+    if (first) first.focus({ preventScroll: true });
   }
 
   // ---- Learned stores (Settings)
@@ -3837,7 +4011,7 @@
     if (!booted) return; // wait for stored data to load (init below)
     const keepPlace = !!(opts && opts.keepPlace);
     if (!keepPlace && lotDialog && lotDialog.open) lotDialog.close();
-    if (!keepPlace) { txModal = null; familyPanel = false; ruleEditing = null; ruleError = ''; }
+    if (!keepPlace) { txModal = null; familyPanel = false; ruleEditing = null; ruleError = ''; closeTrip(); keywordDraft = null; }
     let requested = location.hash.replace('#', '') || 'home';
     if (requested === 'budget-expenses') requested = 'budget-transactions';
     if (requested === 'portfolio-transactions') { requested = 'portfolio-activity'; history.replaceState(null, '', '#portfolio-activity'); }
@@ -3850,6 +4024,8 @@
     document.title = `${page.doc ? page.title + ' · ' + page.doc : page.title} · Kanopi`;
     view.innerHTML = page.render();
     syncPlanDialog(opts);
+    syncTripDialog(opts);
+    syncKeywordDialog(opts);
     syncTxDialog(opts);
     syncFamilyDialog(opts);
     renderWhoMenu();
@@ -3949,6 +4125,9 @@
     if (t.closest('[data-tx-delete-no]')) { closeTxModal(); return; }
     const txYes = t.closest('[data-tx-delete-yes]');
     if (txYes) { txModal = null; deleteTx(txYes.dataset.txDeleteYes); route({ keepPlace: true, focus: '[data-open-tx]' }); return; }
+    if (t.closest('[data-open-trip]')) { openTrip(); route({ keepPlace: true, focus: '#trip-name' }); return; }
+    if (t.closest('[data-keyword-cancel]')) { keywordDraft = null; route({ keepPlace: true, focus: '[data-tx-form] [type=submit]' }); return; }
+    if (t.closest('[data-trip-cancel]')) { closeTrip(); route({ keepPlace: true, focus: '[data-open-trip]' }); return; }
     if (t.closest('[data-open-plan]')) { openPlan(null); route({ keepPlace: true, focus: '#plan-name' }); return; }
     const planEdit = t.closest('[data-plan-edit]');
     if (planEdit) {
@@ -4178,15 +4357,32 @@
       if (acctDraft && saveAcct()) { acctPanel = false; acctDraft = null; acctEditing = null; route({ keepPlace: true, focus: '[data-open-acct]' }); } else route({ keepPlace: true, focus: '.form-error' });
       return;
     }
+    if (event.target.matches('[data-trip-form]')) {
+      event.preventDefault();
+      event.target.querySelectorAll('[data-trip]').forEach((i) => { tripDraft[i.dataset.trip] = i.value; });
+      if (saveTrip()) { closeTrip(); route({ keepPlace: true, focus: '[data-open-trip]' }); } else route({ keepPlace: true, focus: '.form-error' });
+      return;
+    }
     if (event.target.matches('[data-plan-form]')) {
       event.preventDefault(); toolError = '';
       if (planDraft && savePlan()) { planPanel = false; planDraft = null; planEditing = null; route({ keepPlace: true, focus: '[data-open-plan]' }); } else route({ keepPlace: true, focus: '.form-error' });
       return;
     }
     if (event.target.matches('[data-rule-form]')) { event.preventDefault(); saveRuleEdit(event.target.dataset.ruleForm, event.target.querySelector('[data-rule-input]').value); return; }
+    if (event.target.matches('[data-keyword-form]')) {
+      event.preventDefault();
+      const key = Store.vendorKey(event.target.querySelector('[data-keyword-input]').value);
+      if (key.length < KEYWORD_MIN) { keywordDraft.error = `Use at least ${KEYWORD_MIN} letters.`; route({ keepPlace: true, focus: '#keyword-input' }); return; }
+      txDraft.keywordChosen = key;
+      keywordDraft = null;
+      toolError = '';
+      if (saveTx()) { txDraft = null; txModal = null; route({ keepPlace: true, focus: '[data-open-tx]' }); }
+      else route({ keepPlace: true, focus: '.form-error' });
+      return;
+    }
     if (event.target.matches('[data-tx-form]')) {
       event.preventDefault(); toolError = '';
-      if (txDraft && saveTx()) { txDraft = null; txModal = null; route({ keepPlace: true, focus: '[data-open-tx]' }); } else route({ keepPlace: true, focus: '.form-error' });
+      if (txDraft && saveTx()) { txDraft = null; txModal = null; route({ keepPlace: true, focus: '[data-open-tx]' }); } else if (keywordDraft) route({ keepPlace: true, focus: '#keyword-input' }); else route({ keepPlace: true, focus: '.form-error' });
       return;
     }
     if (!event.target.matches('[data-member-form]')) return;

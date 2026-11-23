@@ -203,7 +203,10 @@
       const bankId = String(cell(r, ci.id)).trim();
       const id = bankId ? `x-${hashText(`${member.id}|${bankKey}|${bankId}`)}` : `x-${hashText(`${base}|${seen[base]}`)}`;
       const src = `${member.id}|${bankKey}|${cfg.account || ''}`;
-      out.records.push({ id, kind: 'expense', date, name, type, cat, amount, paidBy: member.id, owner, src });
+      // A card refund is saved as an expense with a negative amount.
+      const recType = type === 'refund' ? 'expense' : type;
+      const recAmount = type === 'refund' ? -amount : amount;
+      out.records.push({ id, kind: 'expense', date, name, type: recType, cat, amount: recAmount, paidBy: member.id, owner, src });
     });
     return out;
   }

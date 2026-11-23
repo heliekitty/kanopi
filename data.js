@@ -66,7 +66,7 @@ window.KANOPI_SAMPLE = {
     }
   },
 
-  // Transactions. type = expense | refund | income | transfer.
+  // Transactions. type = expense | income | transfer. A refund is an expense with a negative amount.
   // owner = whose budget it counts in. paidBy = who paid it (or who received it, for refunds and income).
   // A refund or reimbursement is a transaction of its own, entered with the opposite sign of an expense.
   // Transfers (such as paying a credit card) move your own money and are not spending.
@@ -84,9 +84,9 @@ window.KANOPI_SAMPLE = {
     { daysAgo: 12, name: 'Credit card payment', type: 'transfer', cat: '', amount: 1840, paidBy: 'redpanda', owner: 'shared' },
     { daysAgo: 13, name: 'Gym membership', type: 'expense', cat: 'health', amount: 55, paidBy: 'koala', owner: 'koala' },
     { daysAgo: 15, name: 'Pet food', type: 'expense', cat: 'pet', amount: 48, paidBy: 'koala', owner: 'shared' },
-    { daysAgo: 17, name: 'Red Panda\'s share, water and gas', type: 'refund', cat: 'utilities', amount: 64, paidBy: 'koala', owner: 'shared' },
+    { daysAgo: 17, name: 'Red Panda\'s share, water and gas', type: 'expense', cat: 'utilities', amount: -64, paidBy: 'koala', owner: 'shared' },
     { daysAgo: 18, name: 'Book club dinner', type: 'expense', cat: 'eating', amount: 58, paidBy: 'redpanda', owner: 'redpanda' },
-    { daysAgo: 18, name: 'Red Panda\'s share, mortgage', type: 'refund', cat: 'mortgage', amount: 1075, paidBy: 'koala', owner: 'shared' },
+    { daysAgo: 18, name: 'Red Panda\'s share, mortgage', type: 'expense', cat: 'mortgage', amount: -1075, paidBy: 'koala', owner: 'shared' },
     { daysAgo: 19, name: 'Water and gas', type: 'expense', cat: 'utilities', amount: 128, paidBy: 'koala', owner: 'shared' },
     { daysAgo: 19, name: 'Paycheck', type: 'income', cat: '', amount: 1900, paidBy: 'koala', owner: 'koala' },
     { daysAgo: 20, name: 'Mortgage', type: 'expense', cat: 'mortgage', amount: 2150, paidBy: 'koala', owner: 'shared' },
@@ -96,7 +96,7 @@ window.KANOPI_SAMPLE = {
     { daysAgo: 28, name: 'Transfer to savings', type: 'transfer', cat: '', amount: 500, paidBy: 'koala', owner: 'shared' },
     { daysAgo: 29, name: 'Yoga class pack', type: 'expense', cat: 'health', amount: 90, paidBy: 'redpanda', owner: 'redpanda' },
     { daysAgo: 30, name: 'Grocery run', type: 'expense', cat: 'groceries', amount: 121, paidBy: 'redpanda', owner: 'shared' },
-    { daysAgo: 31, name: 'Returned order', type: 'refund', cat: 'groceries', amount: 12, paidBy: 'redpanda', owner: 'shared' },
+    { daysAgo: 31, name: 'Returned order', type: 'expense', cat: 'groceries', amount: -12, paidBy: 'redpanda', owner: 'shared' },
     { daysAgo: 33, name: 'Brunch', type: 'expense', cat: 'eating', amount: 61, paidBy: 'redpanda', owner: 'shared' },
     { daysAgo: 33, name: 'Pet insurance', type: 'expense', cat: 'pet', amount: 38, paidBy: 'redpanda', owner: 'shared' },
     { daysAgo: 33, name: 'Paycheck', type: 'income', cat: '', amount: 1900, paidBy: 'koala', owner: 'koala' },
